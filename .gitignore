@@ -7,4 +7,5 @@
 #   - artefatos gerados: relatórios HTML exportados
 
 .private_docs
+.venv
 
