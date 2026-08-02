@@ -1,8 +1,8 @@
 # requirements.txt — Lista de dependências do projeto (nomes das libs; versões travadas na Fase 4).
 # Ideia do que entra aqui (uma lib por linha, sem código):
-#   pandas       -> motor de dados (ler, limpar, agregar)
-#   streamlit    -> interface web interativa
-#   sqlalchemy   -> conexão com bancos SQL (conector SQL)
+#   pandas       -> motor de dados (ler, limpar, agregar) [ok]
+#   streamlit    -> interface web interativa [ok]
+#   sqlalchemy   -> conexão com bancos SQL (conector SQL) [ok]
 #   requests     -> chamadas HTTP para o conector de API
 #   plotly       -> gráficos do perfil
 #   pyyaml       -> leitura do arquivo de config

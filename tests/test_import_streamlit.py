@@ -3,16 +3,13 @@ import pandas as pd
 import numpy as np
 
 # config
-
 st.set_page_config(page_title="test_import_streamlit.py", page_icon=":guardsman:", layout="wide")
 
 # title
-
 st.title("test_import_streamlit_py")
 st.write("model imported successfully!")
 
 # elements
-
 st.sidebar.header("Config")
 linhas = st.sidebar.slider("Number of lines", min_value=10, max_value=100, value=50)
 
