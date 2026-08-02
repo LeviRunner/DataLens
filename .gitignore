@@ -1,0 +1,10 @@
+# .gitignore — O que o Git deve ignorar (não versionar).
+# Ideia do que listar aqui:
+#   - ambiente virtual (venv/.venv)
+#   - caches do Python (__pycache__, *.pyc)
+#   - dados locais grandes/sensíveis dentro de data/ (menos os exemplos pequenos)
+#   - segredos: chaves de API, .env
+#   - artefatos gerados: relatórios HTML exportados
+
+.private_docs
+

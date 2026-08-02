@@ -1,0 +1,11 @@
+# config.example.yaml — Exemplo de configuração do DataLens (copie para config.yaml e ajuste).
+# Ideia dos campos que este arquivo deve descrever (sem código, só a estrutura pretendida):
+#   fonte:
+#     tipo: csv | excel | sql | api        # qual conector usar
+#     caminho/conexao/url: onde estão os dados
+#     query: (só para SQL) a consulta do usuário a ser executada
+#   colunas:
+#     mapeamento manual quando o auto-detector errar
+#     (ex.: dizer que tal coluna é data, outra é valor numérico, outra é categoria)
+#   perfil:
+#     opções do que mostrar (faltantes, estatísticas, distribuição por coluna)
