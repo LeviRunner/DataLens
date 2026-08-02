@@ -17,11 +17,14 @@ datalens/
 ├── data/
 │   ├── .gitkeep
 │   └── exemplos/
+│       ├── financas.db               # banco SQLite: ativos + cotações + indicadores (Fase 1)
 │       ├── acoes_b3.csv              # dataset estrela: ações B3 (PETR4/VALE3)   (Fase 1)
 │       ├── acoes_eua.csv             # ações EUA (Apple/Tesla)                   (Fase 1)
 │       ├── cripto.csv                # vitrine: cripto                           (Fase 3)
 │       ├── financas_pessoais.xlsx    # vitrine: planilha "suja" p/ limpeza       (Fase 2)
 │       └── README.md                 # origem de cada dataset
+├── scripts/
+│   └── baixar_dados.py               # baixa os dados públicos e monta financas.db (Fase 1)
 ├── src/
 │   └── datalens/
 │       ├── __init__.py

@@ -28,27 +28,32 @@ def create_db():
     # gravating data in the database
     example_df.to_sql('sales', con=engine, if_exists='replace', index=False)
 
+
 create_db()
 
-# view data db using SQLAlchemy and pandas
+# interation of Pandas + Streamlit
 st.subheader("1. direct view data db (SQLite)")
+
 # uding pandas for make query SQL db on SQLAlchemy
-df_db = pd.read_sql('SELECT * FROM Total_Revenue', con=engine)
+df_db = pd.read_sql('SELECT * FROM sales', con=engine)
 
 # exibition table
-st.dataframe(df_db, use_container_width=true)
+st.dataframe(df_db, use_container_width=True)
 
 # interation of Pandas + Streamlit
 st.subheader("2. Filter and Interation")
-min_cant = st.slider("Select minimum quantity", 0, 400, 100)
+
+min_cant = st.slider("Select minimum quantity", 0, 100, 10)
 
 # Filter dataframe
 filter_df = df_db[df_db['Cantity'] >= min_cant]
 
 st.write(f"Were found **{len(filter_df)}** products with a quantity greater than or equal to {min_cant}")
-st.dataframe(filter_df, use_container_width=true)
+
+st.dataframe(filter_df, use_container_width=True)
 
 # generation graphic
 st.subheader("3. Graphic")
+
 # Streamlit natively understands Pandas DataFrames for creating charts
-st.bar_chart(filter_df.set_index('product')['Total_Revenue'])
+st.bar_chart(filter_df.set_index('Product')['Total_Revenue'])
