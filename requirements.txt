@@ -1,9 +1,14 @@
-# requirements.txt — Lista de dependências do projeto (nomes das libs; versões travadas na Fase 4).
-# Ideia do que entra aqui (uma lib por linha, sem código):
-#   pandas       -> motor de dados (ler, limpar, agregar) [ok]
-#   streamlit    -> interface web interativa [ok]
-#   sqlalchemy   -> conexão com bancos SQL (conector SQL) [ok]
-#   requests     -> chamadas HTTP para o conector de API
-#   plotly       -> gráficos do perfil
-#   pyyaml       -> leitura do arquivo de config
-#   openpyxl     -> leitura de arquivos Excel (.xlsx)
+# requirements.txt — Dependências do projeto DataLens.
+# Instalação: .venv\Scripts\python.exe -m pip install -r requirements.txt
+
+pandas==3.0.5           # motor de dados (ler, limpar, agregar)
+numpy==2.5.1            # base numérica do pandas / geração de dados
+streamlit==1.60.0       # interface web interativa
+SQLAlchemy==2.0.51      # conexão com bancos SQL (conector SQL)
+requests==2.34.2        # chamadas HTTP para o conector de API
+plotly==6.5.1           # gráficos do perfil
+PyYAML==6.0.3           # leitura do arquivo de config
+openpyxl==3.1.5         # leitura de arquivos Excel (.xlsx)
+
+# Desenvolvimento
+pytest==9.1.1           # execução dos testes
