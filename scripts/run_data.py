@@ -1,10 +1,9 @@
-"""Recria o finance.db a partir do scripts/schema.sql.
+"""Cria o data/finance.db a partir do scripts/schema.sql.
 
-O banco anterior (tabelas em portugues) e preservado como finance_legacy.db e
-seus dados sao migrados para o novo esquema em ingles. As colunas estao na
-mesma ordem nos dois esquemas, entao o INSERT ... SELECT * funciona direto.
+Se o banco ja existir o script aborta sem tocar nos dados. Use --force para
+apagar e recriar do zero.
 
-Uso: python scripts/run_data.py
+Uso: python scripts/run_data.py [--force]
 """
 
 import sqlite3
@@ -13,16 +12,7 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 SCHEMA = RAIZ / "scripts" / "schema.sql"
-BANCO = RAIZ / "data" / "exemplos" / "finance.db"
-BANCO_ANTIGO = RAIZ / "data" / "exemplos" / "finance_legacy.db"
-
-# tabela nova -> tabela antiga (mesma ordem de colunas nos dois esquemas)
-MIGRACAO = {
-    "assets": "ativos",
-    "quotes": "cotacoes",
-    "series": "series",
-    "indicators": "indicadores",
-}
+BANCO = RAIZ / "data" / "finance.db"
 
 
 def criar_esquema(conexao: sqlite3.Connection) -> None:
@@ -30,40 +20,30 @@ def criar_esquema(conexao: sqlite3.Connection) -> None:
     conexao.executescript(SCHEMA.read_text(encoding="utf-8"))
 
 
-def migrar_dados(conexao: sqlite3.Connection, origem: Path) -> None:
-    """Copia as linhas do banco legado para as tabelas do novo esquema."""
-    conexao.execute("ATTACH DATABASE ? AS legado", (str(origem),))
-    try:
-        for nova, antiga in MIGRACAO.items():
-            conexao.execute(f"INSERT INTO {nova} SELECT * FROM legado.{antiga}")
-            total = conexao.execute(f"SELECT COUNT(*) FROM {nova}").fetchone()[0]
-            print(f"  {nova}: {total} linhas")
-    finally:
-        # DETACH so funciona fora de transacao aberta
-        conexao.commit()
-        conexao.execute("DETACH DATABASE legado")
+def main(argv: list[str]) -> int:
+    forcar = "--force" in argv
 
-
-def main() -> int:
     if not SCHEMA.exists():
         print(f"ERRO: schema nao encontrado em {SCHEMA}", file=sys.stderr)
         return 1
 
     if BANCO.exists():
-        if BANCO_ANTIGO.exists():
-            BANCO_ANTIGO.unlink()
-        BANCO.rename(BANCO_ANTIGO)
-        print(f"Banco anterior movido para {BANCO_ANTIGO.name}")
+        if not forcar:
+            print(
+                f"ERRO: {BANCO} ja existe. Rode com --force para apagar e recriar.",
+                file=sys.stderr,
+            )
+            return 1
+        BANCO.unlink()
+        print(f"Banco anterior removido: {BANCO.name}")
+
+    BANCO.parent.mkdir(parents=True, exist_ok=True)
 
     conexao = sqlite3.connect(BANCO)
     try:
         criar_esquema(conexao)
-        print(f"Esquema criado em {BANCO}")
-
-        if BANCO_ANTIGO.exists():
-            migrar_dados(conexao, BANCO_ANTIGO)
-
         conexao.commit()
+        print(f"Esquema criado em {BANCO}")
     finally:
         conexao.close()
 
@@ -71,4 +51,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))
