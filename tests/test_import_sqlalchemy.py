@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 # config streamlit
 st.set_page_config(page_title="test_import_sqlalchemy.py", layout="wide")
 
-st.title("test_import_sqlalchemy.py")
+st.title("SQL alchemy")
 st.write("model imported successfully!")
 
 # config sqlalchemy  
@@ -56,4 +56,4 @@ st.dataframe(filter_df, use_container_width=True)
 st.subheader("3. Graphic")
 
 # Streamlit natively understands Pandas DataFrames for creating charts
-st.bar_chart(filter_df.set_index('Product')['Total_Revenue'])
+st.bar_chart(filter_df.set_index('Product')['Total_Revenu'])
