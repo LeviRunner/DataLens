@@ -1,163 +1,215 @@
-""" Tests for the cleaning pipeline.
+"""Acts on what the detector guessed, and writes down everything it did.
+
+The detector OPINES, the cleaning ACTS - that separation is the design decision this
+module depends on.
+
+Two properties matter more than any individual transformation:
+  1. the input DataFrame is never mutated;
+  2. every difference between before and after is explained by the log.
+
+The log is what makes this module worth more than a call to `df.dropna()`: anyone can
+drop nulls, few can say afterwards exactly what changed.
 """
 
 from __future__ import annotations
 
-import dataclasses
+from dataclasses import dataclass
+from typing import Any, Callable
 
 import pandas as pd
-import pytest
 
-from datalens.cleaning import CleaningAction, clean
-from datalens.detector import detect
+from .detector import DetectedType, best_date_format, parse_date, parse_number
+from .i18n import Message, translate
 
-# The two properties that matter
+# Below this, the detector is guessing rather than reading. Converting on a guess
+# destroys data, and the user has not had a chance to correct it yet.
+MIN_CONFIDENCE_TO_CONVERT = 0.6
 
-def test_clean_does_does_not_mutate_the_input_dataframe():
-    # Arrange
-    df = pd.DataFrame({"value": [1.0, None, 1.0]})
-    before = df.copy(deep=True)
+VALID_STRATEGIES = ("median", "mean", "drop", "keep")
 
-    # Act
-    clean(df, detect(df))
+_TRUE_WORDS = {"true", "yes", "y", "sim", "s", "verdadeiro", "1"}
+_FALSE_WORDS = {"false", "no", "n", "nao", "não", "falso", "0"}
 
-    # Assert
-    pd.testing.assert_frame_equal(df, before)
 
-def test_every_action_in_the_log_is_immutable():
-    # Arrange
-    df = pd.DataFrame({"value": [1.0, 1.0]})
+@dataclass(frozen=True)
+class CleaningAction:
+    """One line of the cleaning log.
 
-    # Act
-    clean(df, detect(df))
+    `column` is empty for row-level actions, which belong to no single column.
+    """
 
-    # Assert
-    pd.testing.assert_frame_equal(df, before)
+    column: str
+    action: str  # dropped_duplicates|filled_missing|converted|dropped_rows
+    count: int
+    detail: str | None = None
 
-def test_a_dataframe_that_needs_nothing_produces_an_empty_log():
-    # Arrange
-    df = pd.DataFrame({"ticker": ["AAPL", "PETR4.SA"], "close": [210.0, 40.0]})
 
-    # Act
-    result, log = clean(df, detect(df))
+def clean(
+    df: pd.DataFrame,
+    types: dict[str, DetectedType],
+    options: dict[str, str] | None = None,
+) -> tuple[pd.DataFrame, list[CleaningAction]]:
+    """Cleans a copy of `df` and returns it together with the log of what changed.
 
-    # Assert
-    assert log == []
-    pd.testing.assert_frame_equal(result, df)
+    `types` is the detector's output. `options` maps a column to a missing-value
+    strategy, overriding the default for that column only.
+    """
+    options = options or {}
+    _validate_options(options)
 
-# Duplicates
+    log: list[CleaningAction] = []
+    result = df.copy(deep=True)
 
-def test_duplicate_rows_are_removed_and_couted():
-    # Arrange
-    df = pd.DataFrame({"ticker": ["AAPL", "AAPL", "PETR4.SA"], "close": [210.0, 210.0, 40.0]})
+    # 1. Duplicates first: no point converting the same row twice.
+    duplicates = int(result.duplicated().sum())
+    if duplicates:
+        result = result.drop_duplicates()
+        log.append(
+            CleaningAction("", "dropped_duplicates", duplicates, "identical rows")
+        )
 
-    # Act
-    result, log = clean(df, detect(df))
+    # 2. Conversion: this is where the detector's guess finally changes the data.
+    for column in result.columns:
+        converted, count, failure_note = _convert(result[column], types.get(str(column)))
+        if converted is None:
+            continue
+        result[column] = converted
+        log.append(CleaningAction(str(column), "converted", count, failure_note))
 
-    # Assert
-    assert len(result) == 2
-    assert any(action.action == "dropped_duplicates" and action.count == 1 for action in log)
+    # 3. Missing values last, because step 2 creates new ones.
+    for column in result.columns:
+        strategy = options.get(str(column)) or _default_strategy(types.get(str(column)))
+        missing = int(result[column].isna().sum())
+        if not missing or strategy == "keep":
+            continue
 
-# Missing values
+        if strategy == "drop":
+            result = result[result[column].notna()].copy()
+            log.append(
+                CleaningAction(str(column), "dropped_rows", missing, "missing values")
+            )
+            continue
 
-def test_missing_numeric_values_are_filled_with_the_median_by_default():
-    # Arrange - median of [10, 20, 30] is 20
-    df = pd.DataFrame({"value": [10.0, 20.0, 30.0, None]})
+        filler = result[column].median() if strategy == "median" else result[column].mean()
+        result[column] = result[column].fillna(filler)
+        log.append(
+            CleaningAction(
+                str(column), "filled_missing", missing, f"{strategy} = {filler}"
+            )
+        )
 
-    # Act
-    result, log = clean(df, detect(df))
+    return result, log
 
-    # Assert
-    assert result["value"].isna().sum() == 0
-    assert result["value"].iloc[3] == 20.0
-    assert any(action.action == "filled_missing" and action.count == 1 for action in log)
 
-def test_the_missing_strategy_can_be_chosen_per_column():
-    # Arrange
-    df = pd.DataFrame({"value": [10.0, 20.0, None]})
+# --- Internals ----------------------------------------------------------------
 
-    # Act
-    result, log = clean(df, detect(df), options={"value": "drop"})
 
-    # Assert
-    assert len(result) == 2
-    assert any(action.action == "dropped_rows" for action in log)
+def _validate_options(options: dict[str, str]) -> None:
+    """A typo in the config must not silently fall back to the default.
 
-def test_keeping_missing_values_is_a_valid_choice():
-    # Arrange
-    df = pd.DataFrame({"value": [10.0, None]})
+    Still a plain ValueError, so the text is not re-renderable per session like a
+    ConnectorError is. It should become a ConfigError carrying a Message once
+    config_loader.py exists - the strategy comes from the config file, so this is a
+    config error wearing the wrong type.
+    """
+    for column, strategy in options.items():
+        if strategy not in VALID_STRATEGIES:
+            raise ValueError(
+                translate(
+                    Message(
+                        "unknown_strategy",
+                        {
+                            "strategy": repr(strategy),
+                            "column": repr(column),
+                            "valid": ", ".join(VALID_STRATEGIES),
+                        },
+                    )
+                )
+            )
 
-    # Act
-    result, _ = clean(df, detect(df), options={"value": "keep"})
 
-    # Assert
-    assert result["value"].isna().sum() == 1
+def _default_strategy(guess: DetectedType | None) -> str:
+    """Median for numbers; everything else is kept.
 
-def test_an_unknown_strategy_fails_loudly():
-    # Arrange
-    df = pd.DataFrame({"value": [1.0, None]})
+    Imputing a category or a date would invent a fact the analysis then treats as
+    real. A missing number is at least on a scale where the median means something.
+    """
+    if guess is not None and guess.type == "numeric":
+        return "median"
+    return "keep"
 
-    # Act / Assert
-    with pytest.raises(ValueError, match="mediana"):
-        clean(df, detect(df), options={"value": "mediana"})
 
-# Type conversion
+def _parse_boolean(value: Any) -> bool | None:
+    text = str(value).strip().lower()
+    if text in _TRUE_WORDS:
+        return True
+    if text in _FALSE_WORDS:
+        return False
+    return None
 
-def test_a_brazilian_currency_column_becomes_numeric():
-    # Arrange
-    df = pd.DataFrame({"amount": ["R$ 1.234,56", "R$ 89,90"]})
 
-    # Act
-    result, log = clean(df, detect(df))
+def _convert(
+    series: pd.Series, guess: DetectedType | None
+) -> tuple[pd.Series | None, int, str | None]:
+    """Applies the detector's guess to one column.
 
-    # Assert
-    assert pd.api.types.is_numeric_dtype(result["amount"])
-    assert result["amount"].iloc[0] == 1234.56
-    assert any(action.action == "converted" for action in log)
+    Returns (converted series, values converted, note about failures), or
+    (None, 0, None) when there is nothing to do - the column is already the right
+    dtype, the type is not convertible, or the guess is too weak to act on.
+    """
+    if guess is None or guess.confidence < MIN_CONFIDENCE_TO_CONVERT:
+        return None, 0, None
 
-def test_values_that_fail_conversion_become_null_and_are_logged_with_an_example():
-    # Arrange
-    df = pd.DataFrame({"value": ["10", "20", "n/a"]})
+    parser: Callable[[Any], Any]
 
-    # Act
-    result, log = clean(df, detect(df), options={"value": "keep"})
+    if guess.type == "numeric":
+        if pd.api.types.is_numeric_dtype(series):
+            return None, 0, None
+        parser = parse_number
+        dtype = "float64"
+    elif guess.type == "boolean":
+        if pd.api.types.is_bool_dtype(series):
+            return None, 0, None
+        parser = _parse_boolean
+        dtype = "boolean"
+    elif guess.type == "date":
+        if pd.api.types.is_datetime64_any_dtype(series):
+            return None, 0, None
+        date_format, _, _ = best_date_format(
+            [str(value).strip() for value in series.dropna()]
+        )
+        if date_format is None:
+            return None, 0, None
 
-    # Assert
-    assert result["values"].isna().sum() == 1
-    failures = [action for action in log if action.action == "converted"]
-    assert failures and "n/a" in (failures[0].detail or "")
+        def parser(value, fmt=date_format):
+            return parse_date(value, fmt)
 
-def test_a_low_confidence_guess_is_not_applied():
-    # Arrange
-    df + pd.DataFrame({"mixed": ["10", "banana", "20", "orange"]})
+        dtype = "datetime64[ns]"
+    else:
+        # category and text are already what they claim to be.
+        return None, 0, None
 
-    # Act
-    result, _ = clean(df, detect(df))
+    values: list[Any] = []
+    failures: list[str] = []
 
-    # Assert
-    assert not pd.api.types.is_numeric_dtype(result["mixed"])
+    for value in series:
+        if pd.isna(value):
+            values.append(None)
+            continue
+        parsed = parser(value)
+        if parsed is None:
+            # Never lose a failure in silence: it becomes null, and the log says so.
+            failures.append(str(value))
+        values.append(parsed)
 
-# The log explains everything
+    converted = pd.Series(values, index=series.index, dtype=dtype)
+    count = int(series.notna().sum()) - len(failures)
 
-def test_the_log_accounts_for_the_change_in_row_count():
-    # Arrange
-    df = pd.DataFrame({"value": [1.0, 1.0, 2.0]})
+    note = None
+    if failures:
+        note = (
+            f"{len(failures)} value(s) could not be converted to {guess.type} "
+            f"and became null, e.g. {failures[0]!r}"
+        )
 
-    # Act
-    result, log = clean(df, detect(df), options={"value": "drop"})
-
-    # Assert
-    removed = sum(
-        action.count for action in log if action.action in {"dropped_duplicates", "dropped_rows"} 
-    )
-    assert len(df) - len(result) == removed
-
-def test_every_logged_action_names_a_real_column():
-    # Arrange
-    df = pd.DataFrame({"value": [1.0, None], "other": ["a", "b"]})
-
-    # act
-    _, log = clean(df, detect(df))
-
-    # Assert
-    assert all(action.column in df.column for action in log if action.column)
+    return converted, count, note
