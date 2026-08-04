@@ -3,19 +3,21 @@
 Catálogo dos dados de demonstração do DataLens: de onde vêm, o que representam e como
 reproduzir. Todos são **públicos e gratuitos**, obtidos sem chave de API.
 
-Servem para provar que o mesmo motor lê dados bem diferentes (banco SQL, CSV, Excel, API).
+Servem para provar que o mesmo motor lê dados bem diferentes (banco SQL, CSV, Excel, JSON,
+API).
 
 ---
 
 ## Arquivos
 
-| Arquivo | Conteúdo | Fase |
-|---|---|---|
-| `financas.db` | Banco SQLite: ações da B3 + EUA e indicadores do Banco Central | 1 |
-| `acoes_b3.csv` | Cotações diárias de 6 ações da B3 (mesmos dados do banco) | 1 |
-| `acoes_eua.csv` | Cotações diárias de 6 ações dos EUA (mesmos dados do banco) | 1 |
-| `cripto.csv` | *(placeholder)* vitrine de cripto | 3 |
-| `financas_pessoais.xlsx` | *(placeholder)* planilha "suja" para o pipeline de limpeza | 2 |
+| Arquivo | Conteúdo | Conector | Fase |
+|---|---|---|---|
+| `finance.db` | Banco SQLite: ações da B3 + EUA e indicadores do Banco Central | `sql_connector` | 1 |
+| `acoes_b3.csv` | Cotações diárias de 6 ações da B3 (mesmos dados do banco) | `csv_connector` | 1 |
+| `acoes_eua.csv` | Cotações diárias de 6 ações dos EUA (mesmos dados do banco) | `csv_connector` | 1 |
+| `selic.json` | *(placeholder)* série 11 do BCB crua, como a API devolve | `json_connector` | 2 |
+| `financas_pessoais.xlsx` | *(placeholder)* planilha "suja" para o pipeline de limpeza | `excel_connector` | 2 |
+| `cripto.csv` | *(placeholder)* vitrine de cripto | `csv_connector` | 3 |
 
 ---
 
@@ -40,6 +42,10 @@ Servem para provar que o mesmo motor lê dados bem diferentes (banco SQL, CSV, E
 - **Endpoint:** `https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados?formato=json`
 - **Chave de API:** não exige.
 - **Licença:** dado público (Lei de Acesso à Informação).
+- **Método:** `GET`, resposta é uma lista plana de `{"data": "dd/mm/aaaa", "valor": "0.05"}`.
+- **Conector:** `json_connector` — é JSON público, sem autenticação. Aceita tanto a URL
+  direta quanto o `selic.json` salvo em disco, e é justamente esse par que prova o
+  desenho de duas origens do conector.
 - **Séries baixadas:**
 
 | Código | Série | Unidade | Frequência |
@@ -48,9 +54,23 @@ Servem para provar que o mesmo motor lê dados bem diferentes (banco SQL, CSV, E
 | 11 | Taxa Selic | % ao dia | diária |
 | 433 | IPCA | % ao mês | mensal |
 
+Atenção ao formato: `valor` vem como **string** (`"0.05"`) e `data` no formato brasileiro
+(`dd/mm/aaaa`). A conversão é trabalho do `detector` + `cleaning`, não do conector.
+
 ---
 
-## Esquema do banco (`financas.db`)
+### 3. Coinext — API de criptomoedas
+
+- **Endpoint base:** `https://api.coinext.com.br:8443/AP/`
+- **Chave de API:** exige — vai em variável de ambiente, nunca no código nem neste arquivo.
+- **Formato:** JSON na requisição e na resposta.
+- **Método:** majoritariamente `POST`, um endpoint por serviço.
+- **Conector:** `api_connector` (Fase 3). O `json_connector` **não** serve aqui: ele só faz
+  `GET` e não sabe de autenticação — é essa a fronteira entre os dois.
+
+---
+
+## Esquema do banco (`finance.db`)
 
 Quatro tabelas — duas dimensões e dois fatos. É essa separação que dá assunto para os JOINs:
 `cotacoes` sozinha não responde "qual setor rendeu mais?", só `cotacoes` + `ativos` responde.
@@ -107,10 +127,10 @@ O conteúdo atual foi baixado em **02/08/2026**, cobrindo **2024-08-02 a 2026-07
 
 ## Como abrir
 
-**DBeaver:** Nova conexão → SQLite → apontar para `data/exemplos/financas.db`.
+**DBeaver:** Nova conexão → SQLite → apontar para `data/exemplos/finance.db`.
 
 **Linha de comando** (sem instalar nada, via Python):
 
 ```bash
-python -c "import sqlite3; c=sqlite3.connect('data/exemplos/financas.db'); print(c.execute('SELECT ticker, data, fechamento FROM cotacoes ORDER BY data DESC LIMIT 5').fetchall())"
+python -c "import sqlite3; c=sqlite3.connect('data/exemplos/finance.db'); print(c.execute('SELECT ticker, data, fechamento FROM cotacoes ORDER BY data DESC LIMIT 5').fetchall())"
 ```
