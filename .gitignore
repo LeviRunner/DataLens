@@ -9,3 +9,12 @@
 .private_docs
 .venv
 
+# Rascunhos de estudo: copia comentada do modulo, gerada ao lado do arquivo real para
+# eu ler e digitar a mao. Nao e teste e nao entra no repositorio.
+src/**/test_*.py
+src/**/test.py
+
+# Bytecode: gerado pelo Python a cada execucao, nunca deve ser versionado.
+__pycache__/
+*.pyc
+
