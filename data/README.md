@@ -91,8 +91,8 @@ AAPL, MSFT, NVDA, TSLA, AMZN, KO (NASDAQ/NYSE).
 ## Como reproduzir / atualizar
 
 ```bash
-python scripts/baixar_dados.py            # 2 anos de histórico (padrão)
-python scripts/baixar_dados.py --anos 5   # período maior
+python scripts/download_data.py            # 2 anos de histórico (padrão)
+python scripts/download_data.py --anos 5   # período maior
 ```
 
 O script recria as tabelas do zero a cada execução (é idempotente) e regrava os dois CSVs a

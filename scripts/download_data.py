@@ -1,8 +1,8 @@
 """Baixa os dados financeiros públicos de exemplo e monta o banco SQLite local.
 
 Uso:
-    python scripts/baixar_dados.py            # 2 anos de histórico (padrão)
-    python scripts/baixar_dados.py --anos 5
+    python scripts/download_data.py            # 2 anos de histórico (padrão)
+    python scripts/download_data.py --anos 5
 
 Gera em data/exemplos/:
     financas.db        banco SQLite com as tabelas ativos, cotacoes e indicadores

@@ -24,34 +24,34 @@ datalens/
 │       ├── financas_pessoais.xlsx    # vitrine: planilha "suja" p/ limpeza       (Fase 2)
 │       └── README.md                 # origem de cada dataset
 ├── scripts/
-│   └── baixar_dados.py               # baixa os dados públicos e monta financas.db (Fase 1)
+│   └── download_data.py               # baixa os dados públicos e monta financas.db (Fase 1)
 ├── src/
 │   └── datalens/
 │       ├── __init__.py
 │       ├── config_loader.py          # lê o YAML, aplica defaults, valida        (Fase 3)
 │       ├── detector.py               # auto-detecta o tipo de cada coluna        (Fase 2)
-│       ├── limpeza.py                # data cleaning (faltantes/duplicados)      (Fase 2)
-│       ├── perfil.py                 # ★ CORAÇÃO: perfil automático (v1)         (Fase 3)
-│       ├── graficos.py               # gráficos do perfil (plotly)              (Fase 3)
-│       ├── relatorio.py              # monta o relatório HTML exportável         (Fase 4)
-│       ├── estatistica.py            # correlações/tendências (v2)              (Fase 5)
-│       └── conectores/
+│       ├── cleaning.py                # data cleaning (faltantes/duplicados)      (Fase 2)
+│       ├── profiling.py                 # ★ CORAÇÃO: perfil automático (v1)         (Fase 3)
+│       ├── charts.py               # gráficos do perfil (plotly)              (Fase 3)
+│       ├── report.py              # monta o relatório HTML exportável         (Fase 4)
+│       ├── statistics.py            # correlações/tendências (v2)              (Fase 5)
+│       └── connectors/
 │           ├── __init__.py
 │           ├── base.py               # ★ contrato comum: carregar() -> dados     (Fase 1)
-│           ├── csv_conector.py       # lê CSV                                     (Fase 2)
-│           ├── excel_conector.py     # lê Excel (.xlsx)                          (Fase 2)
-│           ├── sql_conector.py       # roda a QUERY do usuário no banco          (Fase 1)
-│           └── api_conector.py       # puxa dados de uma API (JSON)              (Fase 3)
+│           ├── csv_connector.py       # lê CSV                                     (Fase 2)
+│           ├── excel_connector.py     # lê Excel (.xlsx)                          (Fase 2)
+│           ├── sql_connector.py       # roda a QUERY do usuário no banco          (Fase 1)
+│           └── api_connector.py       # puxa dados de uma API (JSON)              (Fase 3)
 ├── app/
 │   └── streamlit_app.py              # ★ a interface pública (deploy grátis)     (Fase 4)
 ├── notebooks/
-│   ├── 01_exploracao_sql.ipynb       # rascunho de análise em SQL                (Fase 1)
-│   ├── 02_pandas_exploracao.ipynb    # rascunho de análise em pandas             (Fase 3)
+│   ├── 01_sql_exploration.ipynb       # rascunho de análise em SQL                (Fase 1)
+│   ├── 02_pandas_exploration.ipynb    # rascunho de análise em pandas             (Fase 3)
 │   └── README.md
 ├── tests/
 │   ├── __init__.py
-│   ├── test_conectores.py            # testes dos conectores                     (Fase 5)
-│   ├── test_perfil.py                # testes do perfil                          (Fase 5)
+│   ├── test_connectors.py            # testes dos conectores                     (Fase 5)
+│   ├── test_profiling.py                # testes do perfil                          (Fase 5)
 │   └── README.md
 └── docs/
     ├── arquitetura.md                # o fluxo do sistema explicado              (Fase 1)

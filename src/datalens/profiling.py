@@ -1,5 +1,5 @@
 """
-perfil.py — O CORAÇÃO do DataLens: o perfil automático dos dados (v1).
+profiling.py — O CORAÇÃO do DataLens: o perfil automático dos dados (v1).
 Ideia (sem código): receber os dados já limpos e produzir, por coluna:
   - o tipo detectado
   - a porcentagem de valores faltantes
