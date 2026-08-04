@@ -56,6 +56,6 @@ def load(self) -> pd.DataFrame:
 
     except pd.errors.ParserError as error:
         raise ConnectorError(
-            f""
-            f""
+            f"I couldn't interpret the structure of {target} using the separator"
+            f"{self.separator}. Check if the file uses ';' or tabulation"
         ) from error
