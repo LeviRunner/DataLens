@@ -24,9 +24,9 @@ class SQLConnector:
         parameters: dict[str, Any] | None = None,
     ) -> None:
         if not connection or not connection.strip():
-            raise ConnectorError("Empty connection string.")
+            raise ConnectorError("sql_empty_connection")
         if not query or not query.strip():
-            raise ConnectorError("Empty query - the SQL connector needs to know what to query.")
+            raise ConnectorError("sql_empty_query")
 
         self.connection = connection
         self.query = query
@@ -39,16 +39,17 @@ class SQLConnector:
             engine = create_engine(self.connection)
         except SQLAlchemyError as error:
             raise ConnectorError(
-                f"Invalid connection string: {self.connection!r}. "
-                f"Use the SQLAlchemy format, e.g., 'sqlite:///path/database.db'."
+                "sql_invalid_connection", connection=repr(self.connection)
             ) from error
 
         try:
-            with engine.connect() as call:
-                return pd.read_sql(text(self.query), call, params=self.parameters)
+            with engine.connect() as open_connection:
+                return pd.read_sql(
+                    text(self.query), open_connection, params=self.parameters
+                )
         except (SQLAlchemyError, pd.errors.DatabaseError) as error:
             raise ConnectorError(
-                f"Failed to execute query in {self.connection!r}: {error}"
+                "sql_query_failed", connection=repr(self.connection), detail=error
             ) from error
         finally:
             engine.dispose()
