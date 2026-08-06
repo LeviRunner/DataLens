@@ -92,8 +92,8 @@ def fake_get(monkeypatch):
 
 # The contract
 
-def test_json_connector_satisfies_the_contract_without_inheriting_from_it(json_records):
-    # Arrange
+def test_jsoArrangen_connector_satisfies_the_contract_without_inheriting_from_it(json_records):
+    # 
     connector = JSONConnector(str(json_records))
 
     # Act / Assert
@@ -176,3 +176,50 @@ def test_missing_keys_across_records_become_missing_values(tmp_path: Path):
     path.write_text(
         '[{"ticker": "AAPL", "close": 210.0}, {"ticker": "KO"}]', encoding="utf-8"
     )
+
+    # Act
+    result = JSONConnector(str(path)).load()
+
+    # Assert
+    assert result.shape == (2, 2)
+    assert pd.isna(result["volume"][1])
+
+# Reading from a URL
+
+def test_a_source_starting_with_htto_is_fetched_instead_of_opened(fake_get):
+    """The whole point of the two-origin design"""
+    # Arrange
+    fake_get(payload=[{"data": "02/01/2026", "valor": "0.05"}])
+
+    # Act
+    result = JSONConnector(
+        "https://api.bcb.gov.br/dados/serie/bcdata.sgs.11/dados?formato=json"
+    ).load()
+
+    # Assert
+    assert result.shape == (1, 2)
+
+def test_records_path_works_the_same_over_the_network(fake_get):
+    # Arrange
+    fake_get(payload={"data": {"items": [{"codigo": 1, "valor": 5.4}]}})
+
+    # Act
+    result = JSONConnector("https://x.com", records_path="data.items").load()
+
+    # Assert
+    assert list(result.columns) == ["codigo", "valor"]
+
+# Failures on disk
+
+def test_a_missing_file_is_reported_as_a_connector_error(tmp_path: Path):
+    # Arrange
+    connector = JSONConnector(str(tmp_path / "does_not_exists.json"))
+
+    # Act / Assert
+    with pytest.raises(ConnectorError, match="File not found"):
+        connector.load()
+
+def test_a_directory_is_reported_as_a_connector_error(tmp_path: Path):
+    with pytest.raises(ConnectorError, match="directory"):
+    JSONConnector(str(tmp_path)).load()
+
