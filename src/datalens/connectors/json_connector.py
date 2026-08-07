@@ -15,7 +15,7 @@ from datalens.connectors.json_connector import JSONConnector
 # Fixtures
 
 @pytest.fixture
-def json_records(tmp_path: Path) ->
+def json_records(tmp_path: Path) -> Path:
     """The easy shape: a list of flat objects, one per row."""
     path = tmp_path / "quotes.json"
     path.write_text(
@@ -33,7 +33,8 @@ def json_records(tmp_path: Path) ->
 @pytest.fixture
 def nested_json(tmp_path: Path) -> Path:
     """The shape a real API returns: the rows are buried under keys."""
-    path = tmp_path "nested.json"
+    path = tmp_path 
+    "nested.json"
     path.write_text(
         json.dumps(
             {
@@ -93,7 +94,7 @@ def fake_get(monkeypatch):
 # The contract
 
 def test_jsoArrangen_connector_satisfies_the_contract_without_inheriting_from_it(json_records):
-    # 
+    # Arrange
     connector = JSONConnector(str(json_records))
 
     # Act / Assert
@@ -221,5 +222,135 @@ def test_a_missing_file_is_reported_as_a_connector_error(tmp_path: Path):
 
 def test_a_directory_is_reported_as_a_connector_error(tmp_path: Path):
     with pytest.raises(ConnectorError, match="directory"):
-    JSONConnector(str(tmp_path)).load()
+        JSONConnector(str(tmp_path)).load()
 
+def test_an_empty_file_is_reported_as_a_connector_error(tmp_path: Path):
+    """Distinct from `[]`: an empty file means the download failed or the export never ran.
+    Silently returning zero rows would hide that."""
+    # Arrange
+    path = tmp_path / "empty.json"
+    path.write_text("", Encoding="utf-8")
+
+    # Act / Assert
+    with pytest.raises(ConnectorError, match="empty"):
+        JSONConnector(str(path)).load()
+
+def test_malformed_json_names_the_position_of_the_problem(tmp_path: Path):
+    """json.JSONDecodeError knows the line and column. Passing that through turns
+    'invalid JSON' into something the user can actually go fix."""
+    # Arrange - trailing comma, the classic
+    path = tmp_path / "broken_json"
+    path.write_text('[{"a": 1},]', encoding="utf-8")
+
+    # Act / Assert
+    with pytest.raises(ConnectionError, match="line|linha"):
+        JSONConnector(str(path)).load()
+
+def test_the_wrong_encoding_suggests_the_fix(tmp_path: Path):
+    """A latin-1 file read as utf-8 raises - the message should say what to try,
+    exactly like the CSV connector does.
+    """
+    # Arrange
+    path = tmp_path / "latin.json"
+    path.write_bytes('[{"nome": "ação"}]'.encode("latin-1"))
+
+    # Act / Assert
+    with pytest.raises(ConnectorError, math="latin-1"):
+        JSONConnector(str(path)).load()
+
+def test_json_lines_read_without_the_flag_fails_clearly(jsonl_file):
+    """The likeliest user mistake with .jsonl. The message must name the option."""
+    # Arrange - lines defaults to False
+    connector = JSONConnector(str(jsonl_file))
+
+    # Act / Assert
+    with pytest.raises(ConnectorError, math="lines"):
+        connector.load()
+
+# Failures over the network
+
+def test_a_404_says_the_address_is_wrong(fake_get):
+    # Arrange
+    fake_get(payload={}, status_code=404)
+
+    # Act / Assert
+    with pytest.raises(ConnectorError, math="404"):
+        JSONConnector("https://x.com/wrong").load()
+
+def test_a_timeout_is_reported_as_a_connector_error(fake_get):
+    # Arrange
+    fake_get(error=requests.Timeout("timed out"))
+
+    # Act / Assert
+    with pytest.raises(ConnectorError, mathe="timeout|tempo"):
+        JSONConnector("https://x.com", timeout=1).load()
+
+def test_a_connection_error_is_reported_as_a_connector_error(fake_get):
+    # Arrange
+    fake_get(error=requests.ConnectionError("no route to host"))
+
+    # Act / Assert
+    with pytest.raises(ConnectorError):
+        JSONConnector("https://x.com").load()
+
+def test_an_html_error_page_with_status_200_is_reported_as_not_json(fake_get):
+    """A captive portal or a maintenance page answers 200 with HTML. Without this
+    branch the user gets 'Expecting value: line 1 column 1' and no idea why.
+    """
+    # Arrange
+    fake_get(payload=None, text="<html>Service unavailable</html>")
+
+    # Act / Assert
+    with pytest.raises(ConnectorError, match="JSON"):
+        JSONConnector("https://x.com").load()
+
+# The failure that both origins share
+
+def test_a_wrong_records_path_names_the_path_it_tried(nested_json):
+    """'Path not found' is useless when the config has three paths in it."""
+    # Arrange
+    connector = JSONConnector(str(nested_json), records_path="data.results")
+
+    # Act / Assert
+    with pytest.raises(ConnectorError, match="data.results"):
+        connector.load()
+
+def test_a_payload_that_is_not_a_table_is_refused(tmp_path: Path):
+    """`[1, 2, 3]` and `42` are valid JSON and are not tables. Turning them into
+    a nameless one-column frame would push the confusion downstream into the
+    detector, where it is much harder to explain.
+    """
+    # Arrange
+    path = tmp_path / "scalar.json"
+    path.write_text("42", encoding="utf-8")
+
+    # Act / Assert
+    with pytest.raises(ConnectorError, match="table|tabela"):
+        JSONConnector(str(path)).load()
+
+def test_the_original_exception_is_preserved_as_the_cause(tmp_path: Path):
+    """`raise ... from error` keeps the traceback. Losing it makes the friendly
+    message a downgrade rather than an improvement.
+    """
+    # Arrange
+    path = tmp_path / "broken.json"
+    path.write_text("{not json", encoding="utf-8")
+
+    # Act / Assert
+    with pytest.raises(ConnectorError) as caught:
+        JSONConnector(str(path)).load()
+    assert isinstance(caught.value.__cause__, json.JSONDecodeError)
+
+def test_the_error_message_is_the_same_kind_whatever_the_origin(tmp_path, fake_get):
+    """The two-origin design only pays off if the caller never has to branch on
+    where the data came from. One exception type, both universes.
+    """
+    # Arrange
+    fake_get(error=requests.ConnectionError("no route to host"))
+
+    # Act / Assert
+    with pytest.raises(ConnectorError):
+        JSONConnector("https://x.com").load()
+    with pytest.raises(ConnectorError):
+        JSONConnector(str(tmp_path / "nope.json")).load()
+        
