@@ -19,3 +19,14 @@ src/**/test.py
 __pycache__/
 *.pyc
 
+
+# Dado DERIVADO, reconstruido por `python scripts/download_data.py`.
+# Fica de fora porque cada regeracao gravaria um blob novo INTEIRO no historico do
+# Git — o banco vai a 134 MB no universo completo, e um repositorio de estudo nao
+# deveria carregar isso para sempre por causa de um arquivo que um comando refaz.
+data/exemplos/*.db
+data/exemplos/acoes_*.csv
+
+# Binario de 4 MB que veio junto para inspecionar o banco na mao; quem precisa
+# instala o sqlite3 do sistema.
+data/exemplos/sqlite3.exe

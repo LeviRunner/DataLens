@@ -1,0 +1,23 @@
+# Tema do DataLens — escuro, painel de mesa de operacao.
+#
+# Fica AQUI e nao em CSS por um motivo pratico: o `st.plotly_chart` com
+# `theme="streamlit"` (o padrao) le estas cores e pinta os graficos junto. Definir a
+# paleta no CSS deixaria a pagina escura e os graficos brancos.
+
+[theme]
+base = "dark"
+
+# O vermelho/rosa dos chips e do item ativo do menu na referencia.
+primaryColor = "#ff4b6e"
+
+# Fundo da area principal e das laterais/cards. Os dois tons separam o palco do
+# cenario: sem essa diferenca, um card sem borda desaparece no fundo.
+backgroundColor = "#0f1116"
+secondaryBackgroundColor = "#181c26"
+
+textColor = "#e6e8ee"
+font = "sans serif"
+
+[server]
+# A pagina inicial cabe numa tela; recarregar sozinho enquanto alguem le nao ajuda.
+runOnSave = false

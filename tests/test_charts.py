@@ -46,7 +46,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import pytest
 
-from datalens.charts import distribution_chart, time_series_chart
+from datalens.charts import (
+    MAX_PIE_SLICES,
+    distribution_chart,
+    ranked_bars,
+    share_pie,
+    time_series_chart,
+)
 
 
 # --- The right chart for the right question -----------------------------------
@@ -302,3 +308,99 @@ def test_a_category_with_many_values_is_capped_to_the_top_n():
 
     # Assert
     assert len(figure.data[0].x) <= 20
+
+
+# --- Os dois graficos da pagina inicial ---------------------------------------
+# Mesma regra de sempre: aqui se testa a ESCOLHA e a HONESTIDADE do grafico, nunca
+# a cor. Um ranking desordenado e um erro de analise; um azul diferente nao e.
+
+
+def test_a_ranking_is_drawn_horizontally():
+    """Rotulo e palavra: "Bens Industriais" no eixo vertical sai truncado ou girado
+    45 graus. Deitado, le-se sem esforco."""
+    # Arrange
+    df = pd.DataFrame({"ticker": ["A", "B"], "premium": [0.2, 0.5]})
+
+    # Act
+    figure = ranked_bars(df, "ticker", "premium")
+
+    # Assert
+    assert figure.data[0].type == "bar"
+    assert figure.data[0].orientation == "h"
+
+
+def test_a_ranking_comes_out_ordered_with_the_biggest_on_top():
+    """★ O teste que importa neste grafico.
+
+    O Plotly desenha a PRIMEIRA categoria embaixo. Quem ordena decrescente e entrega
+    sem inverter obtem exatamente o contrario do que quis: o maior no rodape. O erro
+    nao estoura, nao aparece em teste de fumaca, e inverte a leitura da pagina.
+    """
+    # Arrange
+    df = pd.DataFrame({"ticker": ["low", "high", "mid"], "premium": [1.0, 9.0, 5.0]})
+
+    # Act
+    figure = ranked_bars(df, "ticker", "premium")
+
+    # Assert - de baixo para cima: low, mid, high  =>  high no topo
+    assert list(figure.data[0].y) == ["low", "mid", "high"]
+
+
+def test_a_ranking_keeps_the_negative_bars():
+    """Numa tabela de premio sobre o CDI, as barras para a esquerda sao metade da
+    resposta. Descartar negativo seria desenhar so a boa noticia."""
+    # Arrange
+    df = pd.DataFrame({"ticker": ["won", "lost"], "premium": [0.2, -0.4]})
+
+    # Act
+    figure = ranked_bars(df, "ticker", "premium")
+
+    # Assert
+    assert -0.4 in list(figure.data[0].x)
+
+
+def test_a_ranking_is_capped_to_the_requested_size():
+    # Arrange
+    df = pd.DataFrame({"t": [f"T{n}" for n in range(50)], "v": list(range(50))})
+
+    # Act
+    figure = ranked_bars(df, "t", "v", top=5)
+
+    # Assert
+    assert len(figure.data[0].y) == 5
+
+
+def test_the_pie_groups_the_tail_instead_of_dropping_it():
+    """★ As fatias tem que somar o inteiro que o grafico diz dividir.
+
+    Com 10 setores e 6 fatias, cortar os 4 menores produz uma pizza que afirma ser
+    100% de um todo do qual faltam pedacos. Agrupar em "other" mantem a soma e diz ao
+    leitor que existe uma cauda.
+    """
+    # Arrange
+    df = pd.DataFrame({"sector": [f"S{n}" for n in range(10)] * 2})
+
+    # Act
+    figure = share_pie(df, "sector")
+
+    # Assert
+    assert sum(figure.data[0].values) == 20
+    assert "other" in list(figure.data[0].labels)
+    assert len(figure.data[0].labels) == MAX_PIE_SLICES + 1
+
+
+def test_a_short_pie_has_no_other_slice():
+    """Sem cauda, nao se inventa uma fatia vazia."""
+    # Arrange
+    df = pd.DataFrame({"sector": ["a", "a", "b"]})
+
+    # Act
+    figure = share_pie(df, "sector")
+
+    # Assert
+    assert "other" not in list(figure.data[0].labels)
+
+
+def test_the_pie_fails_loudly_on_an_unknown_column():
+    with pytest.raises(KeyError):
+        share_pie(pd.DataFrame({"a": [1]}), "b")

@@ -37,6 +37,13 @@ from .detector import best_date_format, parse_date
 # a chart that lies.
 MAX_CATEGORY_BARS = 20
 
+# Past this many slices a pie stops being readable: the reader compares angles, and
+# a slice under ~5 degrees cannot be compared with anything. The tail is grouped, not
+# dropped - see `share_pie`.
+MAX_PIE_SLICES = 6
+_OTHER_SLICE = "other"
+_DONUT_HOLE = 0.55
+
 # A boolean has exactly two answers, and both are drawn even when one never occurs:
 # "no false rows" is information, an absent bar is not.
 _BOOLEAN_LABELS = ("true", "false")
@@ -106,6 +113,68 @@ def time_series_chart(
             _add_line(figure, rows, date_column, value_column, name=str(group))
 
     return _label_axes(figure, x_title=date_column, y_title=value_column)
+
+
+def ranked_bars(
+    df: pd.DataFrame,
+    label_column: str,
+    value_column: str,
+    top: int = MAX_CATEGORY_BARS,
+) -> go.Figure:
+    """Draws a ranking: one horizontal bar per label, biggest at the top.
+
+    HORIZONTAL, and that is the whole point of having this apart from
+    `distribution_chart`. The labels here are words somebody reads - tickers, sectors,
+    business types - and on a vertical axis they get rotated 45 degrees or truncated
+    with an ellipsis. Read left to right, they cost nothing.
+
+    SORTED, for the same kind of reason: a ranking drawn in the order the query
+    returned makes the eye do the sorting, and the eye is bad at it. Plotly draws the
+    first category at the BOTTOM, so the list is reversed on the way in - otherwise
+    "biggest at the top" quietly becomes "biggest at the bottom".
+
+    Negative values are kept, not dropped: in a table of premiums against a benchmark,
+    the bars going the other way are half the answer.
+    """
+    frame = df.loc[:, [label_column, value_column]].dropna()
+    frame = frame.sort_values(value_column, ascending=False, kind="stable").head(top)
+    frame = frame.iloc[::-1]
+
+    figure = go.Figure(
+        go.Bar(
+            x=frame[value_column].to_numpy(),
+            y=frame[label_column].astype(str).to_numpy(),
+            orientation="h",
+            name=value_column,
+        )
+    )
+    return _label_axes(figure, x_title=value_column, y_title=label_column)
+
+
+def share_pie(df: pd.DataFrame, column: str, top: int = MAX_PIE_SLICES) -> go.Figure:
+    """Draws how a countable column splits a whole, as proportions.
+
+    A pie answers exactly one question - "what share of the total is each part?" - and
+    it answers it badly past a handful of slices, because the reader compares angles
+    and stops being able to at around 5 degrees. So everything below the top `top`
+    values is GROUPED into one slice named "other" instead of being drawn as a fan of
+    invisible wedges. The grouping is visible in the legend; dropping the tail instead
+    would leave a pie whose parts do not add up to the whole it claims to divide.
+    """
+    counts = _column(df, column).dropna().astype(str).value_counts()
+
+    shown = counts.head(top)
+    labels = list(shown.index)
+    values = [int(value) for value in shown.to_numpy()]
+
+    remainder = int(counts.iloc[top:].sum())
+    if remainder:
+        labels.append(_OTHER_SLICE)
+        values.append(remainder)
+
+    # A hole makes it a donut: the centre is where the total goes, and the eye
+    # compares arc lengths instead of trying to judge the area of a wedge.
+    return go.Figure(go.Pie(labels=labels, values=values, hole=_DONUT_HOLE))
 
 
 # --- Internals ----------------------------------------------------------------

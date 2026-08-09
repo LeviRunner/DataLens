@@ -13,8 +13,8 @@ API).
 | Arquivo | Conteúdo | Conector | Fase |
 |---|---|---|---|
 | `finance.db` | Banco SQLite: ações da B3 + EUA e indicadores do Banco Central | `sql_connector` | 1 |
-| `acoes_b3.csv` | Cotações diárias de 6 ações da B3 (mesmos dados do banco) | `csv_connector` | 1 |
-| `acoes_eua.csv` | Cotações diárias de 6 ações dos EUA (mesmos dados do banco) | `csv_connector` | 1 |
+| `acoes_b3.csv` | Cotações diárias das ações da B3 (mesmos dados do banco) | `csv_connector` | 1 |
+| `acoes_eua.csv` | Cotações diárias das ações dos EUA (mesmos dados do banco) | `csv_connector` | 1 |
 | `selic.json` | *(placeholder)* série 11 do BCB crua, como a API devolve | `json_connector` | 2 |
 | `financas_pessoais.xlsx` | *(placeholder)* planilha "suja" para o pipeline de limpeza | `excel_connector` | 2 |
 | `cripto.csv` | *(placeholder)* vitrine de cripto | `csv_connector` | 3 |
@@ -103,21 +103,51 @@ Notas de modelagem:
   o mesmo ativo se o script rodar duas vezes.
 - Índices em `cotacoes(data)` e `indicadores(data)` — filtro por período é a consulta mais comum.
 
-**Ativos incluídos:** PETR4, VALE3, ITUB4, BBAS3, ABEV3, MGLU3 (B3);
-AAPL, MSFT, NVDA, TSLA, AMZN, KO (NASDAQ/NYSE).
+**Ativos incluídos:** depende do `--universo` (ver abaixo). No padrão, PETR4, VALE3,
+ITUB4, BBAS3, ABEV3, MGLU3 (B3) e AAPL, MSFT, NVDA, TSLA, AMZN, KO (NASDAQ/NYSE).
 
 ---
 
-## Como reproduzir / atualizar
+## Como gerar (obrigatório na primeira vez)
+
+**O banco e os CSVs não estão no repositório.** São dado derivado: no universo completo
+o `finance.db` passa de 130 MB, e cada regeração gravaria um blob novo inteiro no
+histórico do Git. Um comando os reconstrói:
 
 ```bash
-python scripts/download_data.py            # 2 anos de histórico (padrão)
-python scripts/download_data.py --anos 5   # período maior
+python scripts/download_data.py                 # 12 ativos curados, 5 anos  (~1 min)
+python scripts/download_data.py --universo b3   # ~324 ações da B3           (~30 min)
+python scripts/download_data.py --universo tudo # B3 + S&P 500, 827 ações    (~75 min)
+python scripts/download_data.py --universo tudo --limite 20   # provar antes de esperar
 ```
 
+| `--universo` | Ativos | Banco | Tempo |
+|---|---|---|---|
+| `exemplo` (padrão) | 12 | ~2 MB | ~1 min |
+| `b3` | ~324 | ~53 MB | ~30 min |
+| `sp500` | 503 | ~81 MB | ~45 min |
+| `tudo` | ~827 | ~134 MB | ~75 min |
+
+Tempos medidos, não estimados: o Yahoo leva ~5 s por ticker e é ele que manda no
+relógio. Os CSVs de exemplo saem com 6 ativos por país mesmo no universo completo —
+eles existem para demonstrar o conector de CSV, e 400 mil linhas não demonstram nada
+que 7.500 não demonstrem.
+
+**De onde saem as listas.** O Yahoo sabe responder *sobre* um ticker, mas não sabe
+*listar* quais existem — o screener dele exige um crumb de sessão. Então a lista da B3
+vem da [brapi](https://brapi.dev/api/available) e a do S&P 500 de um CSV público que já
+traz o setor GICS junto (o que poupa 503 consultas de perfil). O setor das brasileiras
+vem da busca do Yahoo, um ticker por vez.
+
+**O que NÃO entra**, e por quê: terminação `11` (565 códigos, quase todos fundo
+imobiliário ou ETF — não dá para separar uma unit de um FII pelo código, e rankear
+imóvel junto com ação responde outra pergunta sem avisar) e terminação `32`–`39` (BDR:
+a mesma empresa entraria duas vezes, uma em real e outra em dólar).
+
 O script recria as tabelas do zero a cada execução (é idempotente) e regrava os dois CSVs a
-partir dos mesmos dados. Usa só a biblioteca padrão do Python — roda antes mesmo de instalar
-o `requirements.txt`.
+partir dos mesmos dados. Um ticker que falha é pulado e listado no fim — em 827 ativos
+sempre há um que saiu de negociação, e abortar no 700º custaria quinze minutos.
+Usa só a biblioteca padrão do Python — roda antes mesmo de instalar o `requirements.txt`.
 
 Como as APIs são consultadas ao vivo, o intervalo de datas muda conforme o dia da execução.
 O conteúdo atual foi baixado em **02/08/2026**, cobrindo **2024-08-02 a 2026-07-31**

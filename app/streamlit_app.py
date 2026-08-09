@@ -16,17 +16,25 @@ Two consequences worth naming:
 
 from __future__ import annotations
 
+import os
 import sys
-import tempfile
 from pathlib import Path
 
 import streamlit as st
 
-_ROOT = Path(__file__).resolve().parents[1]
+_HERE = Path(__file__).resolve().parent
+_ROOT = _HERE.parent
 # The package lives under src/ and is not installed - the script has to say where it is
-# before importing it, exactly like tests/conftest.py does.
-if str(_ROOT / "src") not in sys.path:
-    sys.path.insert(0, str(_ROOT / "src"))
+# before importing it, exactly like tests/conftest.py does. `_HERE` goes in too so the
+# sibling screens import the same way whether Streamlit or a test started the script.
+for _path in (_ROOT / "src", _HERE):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+
+import home  # noqa: E402
+import terminal  # noqa: E402
+import theme  # noqa: E402
+from uploads import to_temporary_path  # noqa: E402
 
 from datalens import charts, cleaning, detector, profiling  # noqa: E402
 from datalens.config_loader import VALID_COLUMN_TYPES, ConfigError  # noqa: E402
@@ -39,41 +47,63 @@ from datalens.i18n import (  # noqa: E402
     LANGUAGE_NAMES,
     SUPPORTED_LANGUAGES,
     set_language,
+    text,
     translate,
+    translator,
 )
 
 EXAMPLES = _ROOT / "data" / "exemplos"
 EXAMPLE_CSV = EXAMPLES / "acoes_b3.csv"
-EXAMPLE_DB = f"sqlite:///{(EXAMPLES / 'finance.db').as_posix()}"
+
+# A variável de ambiente existe pelos TESTES, e por uma razão que o `conftest.py` já
+# tinha escrito: "os testes são donos dos seus dados; nunca tocam em
+# data/exemplos/finance.db". Os testes de fumaça da tela violavam isso desde sempre —
+# sem consequência enquanto o banco tinha 12 ativos e 2 MB. Com 827 ativos e 134 MB,
+# cada `AppTest.run()` passou a ler um milhão de cotações e a suíte estourou dois
+# minutos. Apontar o app para um banco pequeno devolve os testes ao contrato.
+EXAMPLE_DB_FILE = Path(os.environ.get("DATALENS_DB") or (EXAMPLES / "finance.db"))
+EXAMPLE_DB = f"sqlite:///{EXAMPLE_DB_FILE.as_posix()}"
 
 # The database already flattened the snowflake - the app only names the views.
 READY_MADE_VIEWS = ("v_assets_full", "v_positions")
 VIEW_QUERY = "SELECT * FROM {view}"
+OWN_QUERY = ""  # the "write it yourself" option, identified by a value, not by a label
 
 SOURCES = ("example", "csv", "excel", "sql", "api")
 PREVIEW_ROWS = 50
+
+BRAND = "DATALENS"
+BRAND_MARK = "◈"
+
+# The menu. Home first because it is the one page that answers without being asked
+# anything; the other two need a source or a period before they can say a word.
+#
+# THESE ARE IDENTIFIERS, NOT LABELS. Every string on screen is looked up in the i18n
+# catalog at draw time, so the radio shows "Início" in Portuguese while `page == HOME`
+# still compares "Home". Translating the value instead would make the branch below
+# depend on the language, and the Terminal would stop opening in Spanish.
+HOME = "Home"
+EXPLORE = "Explore"
+TERMINAL = "Terminal"
+PAGES = (HOME, EXPLORE, TERMINAL)
 
 
 # --- Reading the user's input -------------------------------------------------
 
 
-def _uploaded_to_path(uploaded, suffix: str) -> str:
-    """Connectors take a path; an upload lives in memory. This is the only bridge."""
-    temporary = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    temporary.write(uploaded.getvalue())
-    temporary.close()
-    return temporary.name
-
-
 def _csv_connector():
-    uploaded = st.sidebar.file_uploader("CSV file", type=["csv"])
-    separator = st.sidebar.selectbox("Separator", (",", ";", "\t"))
-    encoding = st.sidebar.selectbox("Encoding", ("utf-8", "latin-1"))
-    decimal = st.sidebar.selectbox("Decimal mark", (".", ","))
+    # EVERY WIDGET HERE CARRIES AN EXPLICIT `key`. Streamlit identifies a widget by its
+    # label when none is given, so a translated label is a NEW widget: switching to
+    # Spanish would silently reset the separator, the encoding and the uploaded file.
+    # The key is the identifier; the label is only what it says.
+    uploaded = st.sidebar.file_uploader(text("ui_csv_file"), type=["csv"], key="csv_file")
+    separator = st.sidebar.selectbox(text("ui_separator"), (",", ";", "\t"), key="csv_sep")
+    encoding = st.sidebar.selectbox(text("ui_encoding"), ("utf-8", "latin-1"), key="csv_enc")
+    decimal = st.sidebar.selectbox(text("ui_decimal"), (".", ","), key="csv_dec")
     if uploaded is None:
         return None
     return CSVConnector(
-        _uploaded_to_path(uploaded, ".csv"),
+        to_temporary_path(uploaded),
         separator=separator,
         encoding=encoding,
         decimal=decimal,
@@ -81,32 +111,47 @@ def _csv_connector():
 
 
 def _excel_connector():
-    uploaded = st.sidebar.file_uploader("Excel workbook", type=["xlsx", "xls"])
-    sheet = st.sidebar.text_input("Sheet (name or index)", value="0")
-    header_row = st.sidebar.number_input("Header row", min_value=0, value=0, step=1)
+    uploaded = st.sidebar.file_uploader(
+        text("ui_excel_file"), type=["xlsx", "xls"], key="xls_file"
+    )
+    sheet = st.sidebar.text_input(text("ui_sheet"), value="0", key="xls_sheet")
+    header_row = st.sidebar.number_input(
+        text("ui_header_row"), min_value=0, value=0, step=1, key="xls_header"
+    )
     if uploaded is None:
         return None
     return ExcelConnector(
-        _uploaded_to_path(uploaded, ".xlsx"),
+        to_temporary_path(uploaded),
         sheet=int(sheet) if sheet.isdigit() else sheet,
         header_row=int(header_row),
     )
 
 
 def _sql_connector():
-    connection = st.sidebar.text_input("Connection string", value=EXAMPLE_DB)
-    view = st.sidebar.selectbox("Ready-made view", ("(write my own query)",) + READY_MADE_VIEWS)
-    suggested = "" if view.startswith("(") else VIEW_QUERY.format(view=view)
-    query = st.sidebar.text_area("Query", value=suggested, height=110)
+    connection = st.sidebar.text_input(
+        text("ui_connection_string"), value=EXAMPLE_DB, key="sql_conn"
+    )
+    # `OWN_QUERY` is an empty identifier and not the sentence "(write my own query)":
+    # the sentence changes with the language, and a branch that tests it would stop
+    # recognising the option the moment the user picks Portuguese.
+    label = translator()
+    view = st.sidebar.selectbox(
+        text("ui_ready_made_view"),
+        (OWN_QUERY,) + READY_MADE_VIEWS,
+        format_func=lambda name: label("ui_own_query") if name == OWN_QUERY else name,
+        key="sql_view",
+    )
+    suggested = "" if view == OWN_QUERY else VIEW_QUERY.format(view=view)
+    query = st.sidebar.text_area(text("ui_query"), value=suggested, height=110, key="sql_query")
     if not connection.strip() or not query.strip():
         return None
     return SQLConnector(connection, query)
 
 
 def _api_connector():
-    url = st.sidebar.text_input("Endpoint URL")
-    records_path = st.sidebar.text_input("Records path (optional)")
-    api_key_env = st.sidebar.text_input("API key environment variable (optional)")
+    url = st.sidebar.text_input(text("ui_endpoint_url"), key="api_url")
+    records_path = st.sidebar.text_input(text("ui_records_path"), key="api_records")
+    api_key_env = st.sidebar.text_input(text("ui_api_key_env"), key="api_key_env")
     if not url.strip():
         return None
     return APIConnector(
@@ -141,7 +186,12 @@ def _corrected_types(df, guesses):
     corrected = {}
     for column, guess in guesses.items():
         chosen = st.selectbox(
-            f"{column} - guessed {guess.type} ({guess.confidence:.0%})",
+            text(
+                "ui_guessed",
+                column=column,
+                type=guess.type,
+                confidence=f"{guess.confidence:.0%}",
+            ),
             VALID_COLUMN_TYPES,
             index=VALID_COLUMN_TYPES.index(guess.type),
             key=f"type_{column}",
@@ -156,11 +206,11 @@ def _profile_table(profiles) -> None:
     st.dataframe(
         [
             {
-                "column": item.column,
-                "type": item.type,
-                "values": item.count,
-                "missing": item.missing,
-                "missing %": round(item.missing_pct, 2),
+                text("ui_th_column"): item.column,
+                text("ui_th_type"): item.type,
+                text("ui_th_values"): item.count,
+                text("ui_th_missing"): item.missing,
+                text("ui_th_missing_pct"): round(item.missing_pct, 2),
             }
             for item in profiles.values()
         ],
@@ -169,18 +219,21 @@ def _profile_table(profiles) -> None:
 
 
 def _statistics_panel(profiles) -> None:
-    column = st.selectbox("Column statistics", list(profiles), key="stats_column")
+    column = st.selectbox(text("ui_column_statistics"), list(profiles), key="stats_column")
     stats = profiles[column].stats
     # str() on the value because a profile carries dates, lists and dicts, and the
     # table only has to be readable - no conversion rule belongs to this file.
     st.dataframe(
-        [{"statistic": key, "value": str(value)} for key, value in stats.items()],
+        [
+            {text("ui_th_statistic"): key, text("ui_th_value"): str(value)}
+            for key, value in stats.items()
+        ],
         use_container_width=True,
     )
 
 
 def _distribution_panel(df, types) -> None:
-    column = st.selectbox("Distribution of", list(df.columns), key="chart_column")
+    column = st.selectbox(text("ui_distribution_of"), list(df.columns), key="chart_column")
     st.plotly_chart(
         charts.distribution_chart(df, column, types[column].type),
         use_container_width=True,
@@ -194,17 +247,21 @@ def _time_series_panel(df, types) -> None:
     if not dates or not numbers:
         return
 
-    st.subheader("Over time")
-    date_column = st.selectbox("Date column", dates, key="ts_date")
-    value_column = st.selectbox("Value column", numbers, key="ts_value")
-    group_by = st.selectbox("One line per", ["(none)"] + groups, key="ts_group")
+    st.subheader(text("ui_over_time"))
+    date_column = st.selectbox(text("ui_date_column"), dates, key="ts_date")
+    value_column = st.selectbox(text("ui_value_column"), numbers, key="ts_value")
+    # `None` is the "no grouping" option, and it is the VALUE - the sentence next to it
+    # is drawn by `format_func`, so switching language cannot turn the option into an
+    # unrecognised column name.
+    label = translator()
+    group_by = st.selectbox(
+        text("ui_one_line_per"),
+        [None] + groups,
+        format_func=lambda name: label("ui_none") if name is None else name,
+        key="ts_group",
+    )
     try:
-        figure = charts.time_series_chart(
-            df,
-            date_column,
-            value_column,
-            group_by=None if group_by == "(none)" else group_by,
-        )
+        figure = charts.time_series_chart(df, date_column, value_column, group_by=group_by)
     except ValueError as error:
         # charts refuses to plot a column it cannot read as dates - say so, don't crash.
         st.warning(str(error))
@@ -214,15 +271,15 @@ def _time_series_panel(df, types) -> None:
 
 def _cleaning_log(log) -> None:
     if not log:
-        st.info("Nothing to clean: no duplicates, no conversions, no missing values.")
+        st.info(text("ui_nothing_to_clean"))
         return
     st.dataframe(
         [
             {
-                "column": action.column or "(all)",
-                "action": action.action,
-                "rows": action.count,
-                "detail": action.detail or "",
+                text("ui_th_column"): action.column or text("ui_all"),
+                text("ui_th_action"): action.action,
+                text("ui_th_rows"): action.count,
+                text("ui_th_detail"): action.detail or "",
             }
             for action in log
         ],
@@ -233,52 +290,110 @@ def _cleaning_log(log) -> None:
 # --- The page -----------------------------------------------------------------
 
 
-def main() -> None:
-    st.set_page_config(page_title="DataLens", layout="wide")
-    st.title("DataLens")
-
-    language = st.sidebar.selectbox(
-        "Language / Idioma",
-        SUPPORTED_LANGUAGES,
-        format_func=lambda code: LANGUAGE_NAMES[code],
-    )
-    # Per session, not per process: i18n keeps it in a ContextVar for this reason.
-    set_language(language)
-
-    source = st.sidebar.selectbox("Source", SOURCES)
-    should_clean = st.sidebar.checkbox("Clean the data before profiling", value=False)
-
-    try:
-        connector = _connector_for(source)
-        if connector is None:
-            st.info("Choose a file or fill in the source fields on the left.")
-            return
-        df = connector.load()
-    except (ConnectorError, ConfigError) as error:
-        # One type caught, one sentence printed, in the language of this session.
-        st.error(translate(error.message))
-        return
-
-    st.caption(f"{len(df)} rows, {len(df.columns)} columns")
+def _explore(df, should_clean: bool) -> None:
+    """The profiling screen: what is in this table, column by column."""
+    st.caption(text("ui_rows_columns", rows=len(df), columns=len(df.columns)))
     st.dataframe(df.head(PREVIEW_ROWS), use_container_width=True)
 
-    with st.expander("Column types - correct any wrong guess", expanded=False):
+    with st.expander(text("ui_column_types"), expanded=False):
         types = _corrected_types(df, detector.detect(df))
 
     if should_clean:
         df, log = cleaning.clean(df, types)
-        st.subheader("What cleaning changed")
+        st.subheader(text("ui_cleaning_changed"))
         _cleaning_log(log)
 
     profiles = profiling.profile(df, types)
 
-    st.subheader("Profile")
+    st.subheader(text("ui_profile"))
     _profile_table(profiles)
     _statistics_panel(profiles)
 
-    st.subheader("Distribution")
+    st.subheader(text("ui_distribution"))
     _distribution_panel(df, types)
     _time_series_panel(df, types)
+
+
+def main() -> None:
+    st.set_page_config(page_title="DataLens", layout="wide", initial_sidebar_state="expanded")
+    theme.apply()
+
+    # THE SELECTOR IS DRAWN FIRST AND THE LANGUAGE IS SET BEFORE ANYTHING ELSE. Every
+    # label below is looked up at draw time, so a widget rendered above this line would
+    # keep the previous language for one whole re-run - the brand block did exactly
+    # that until it moved underneath.
+    #
+    # Its own label stays bilingual: somebody who landed on the wrong language has to
+    # be able to find this control without reading the language they cannot read.
+    language = st.sidebar.selectbox(
+        "Language / Idioma",
+        SUPPORTED_LANGUAGES,
+        format_func=lambda code: LANGUAGE_NAMES[code],
+        key="language",
+    )
+    # Per session, not per process: i18n keeps it in a ContextVar for this reason.
+    set_language(language)
+
+    theme.brand(BRAND, BRAND_MARK, text("ui_brand_note"))
+
+    # ONE page at a time, and not tabs. Tabs render every panel on every re-run - the
+    # ranking would recompute while somebody is reading the profile - and they put a
+    # second row of navigation above content that has to start at the top of the fold.
+    # Bound once, here, and handed to every `format_func` below: see `i18n.translator`.
+    label = translator()
+
+    st.sidebar.markdown(f"**{text('ui_main_menu')}**")
+    page = st.sidebar.radio(
+        "Page",
+        PAGES,
+        format_func=lambda name: label(f"ui_page_{name}"),
+        label_visibility="collapsed",
+        key="page",
+    )
+
+    # O CACHE GUARDA POR UMA HORA, E O BANCO MUDA NO DISCO. `download_data.py` leva
+    # mais de uma hora no universo completo e grava ativo a ativo: quem deixou a aba
+    # aberta continua vendo o retrato do momento em que abriu, com um número de ativos
+    # que já não é o do arquivo. Não há como o app perceber sozinho - o SQLite não
+    # avisa ninguém - então o recarregar é explícito, e fica onde quem acabou de rodar
+    # o script vai procurar.
+    if st.sidebar.button(text("ui_reload_data"), help=text("ui_reload_data_help")):
+        st.cache_data.clear()
+        st.rerun()
+
+    if page == HOME:
+        home.render(EXAMPLE_DB)
+        return
+
+    source = st.sidebar.selectbox(
+        text("ui_source"),
+        SOURCES,
+        format_func=lambda name: label(f"ui_source_{name}"),
+        key="source",
+    )
+    should_clean = st.sidebar.checkbox(text("ui_clean_first"), value=False, key="clean")
+
+    df = None
+    error_message = None
+    try:
+        connector = _connector_for(source)
+        df = None if connector is None else connector.load()
+    except (ConnectorError, ConfigError) as error:
+        # One type caught, one sentence printed, in the language of this session.
+        error_message = translate(error.message)
+
+    theme.page_title(page)
+
+    if page == TERMINAL:
+        # The terminal has a warehouse of its own, so a failed upload in Explore must
+        # not take the ranking down with it.
+        terminal.render(EXAMPLE_DB, loaded_frame=df)
+    elif error_message:
+        st.error(error_message)
+    elif df is None:
+        st.info(text("ui_pick_a_source"))
+    else:
+        _explore(df, should_clean)
 
 
 main()
