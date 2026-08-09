@@ -27,7 +27,7 @@ CREATE TABLE frequencies (
 
 --  Tipos de remuneracao ao acionista
 CREATE TABLE payout_types (
-    payout_types_id INTEGER PRIMARY kEY,
+    payout_type_id  INTEGER PRIMARY KEY,
     name            TEXT NOT NULL UNIQUE,
     is_cash         INTEGER NOT NULL DEFAULT 1 CHECK (is_cash IN (0, 1)), -- paga em dinheiro
     is_taxable      INTEGER NOT NULL DEFAULT 0 CHECK (is_taxable IN (0, 1)) -- sofre retencao de IR?
@@ -60,7 +60,7 @@ CREATE TABLE currencies (
 CREATE TABLE sectors (
     sector_id       INTEGER PRIMARY KEY,
     name            TEXT NOT NULL UNIQUE, -- EX: bancos, exchange
-    macro_sector_id INTERGER NOT NULL REFERENCES macro_sectors(macro_sectors_id)
+    macro_sector_id INTEGER NOT NULL REFERENCES macro_sectors(macro_sector_id)
 );
 
 -- Regras tributarias tem vigencia: aliquota muda e o historico precisa sobreviver
@@ -77,8 +77,8 @@ CREATE TABLE tax_rules (
 CREATE TABLE asset_categories (
     asset_category_id INTEGER PRIMARY KEY,
     name              TEXT NOT NULL UNIQUE, -- nomes padronizado para stocks, REIT, tesouro e crypto
-    is_fized_income INTEGER NOT NULL DEFAULT 0 CHECK (is_fixed_income IN (0, 1)),
-    tax_rule_id     INTEGER REFERENCES(tax_rules_id)
+    is_fixed_income INTEGER NOT NULL DEFAULT 0 CHECK (is_fixed_income IN (0, 1)),
+    tax_rule_id     INTEGER REFERENCES tax_rules(tax_rule_id)
 );
 
 CREATE TABLE exchanges (
@@ -96,7 +96,7 @@ CREATE TABLE issuers (
     legal_name      TEXT NOT NULL,
     tax_id          TEXT UNIQUE,
     ir_website      TEXT,
-    country_id      INTEGER NOT NULL REFERENCES couuntries(country_id)
+    country_id      INTEGER NOT NULL REFERENCES countries(country_id)
 );
 
 -- APIs e arquivos que alimentam o Data warehouse
@@ -106,17 +106,17 @@ CREATE TABLE data_sources (
     base_url       TEXT,
     status         TEXT NOT NULL DEFAULT 'active'
                     CHECK (status IN ('active', 'inactive', 'error')),
-    last_loader_at TEXT
+    last_loaded_at TEXT
 );
 
 -- direction = +1 entra, -1 sai, 0 e neutro (desdobramento, troca de ticker)
 CREATE TABLE transaction_types (
-    transaction_types_id INTEGER PRIMARY KEY,
+    transaction_type_id  INTEGER PRIMARY KEY,
     name                 TEXT NOT NULL UNIQUE, -- buy, sell, auction, stock bonus, split
     direction            INTEGER NOT NULL CHECK (direction IN (-1, 0, 1))
 );
 
-CREATE TABLE asset_status (
+CREATE TABLE asset_statuses (
     asset_status_id      INTEGER PRIMARY KEY,
     name                 TEXT NOT NULL UNIQUE, -- listed, Delisted, tender offer, bankruptcy
     is_tradable          INTEGER NOT NULL DEFAULT 1 CHECK (is_tradable IN (0, 1))
@@ -126,7 +126,7 @@ CREATE TABLE asset_status (
 -- Ligadas direto a tabelas fatos
 
 -- dimensao de tempo. A PK e a propria data ISO, o que mantem os fatos legiveis
-CREATE TABLE calender (
+CREATE TABLE calendar (
     date            TEXT PRIMARY KEY,
     year            INTEGER NOT NULL,
     month           INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
@@ -146,17 +146,17 @@ CREATE TABLE assets (
     asset_category_id   INTEGER NOT NULL REFERENCES asset_categories(asset_category_id),
     asset_status_id     INTEGER NOT NULL REFERENCES asset_statuses(asset_status_id),
     sector_id           INTEGER REFERENCES sectors(sector_id), -- NULL for crypto/bands / nulo p/ cripto e renda
-    exchange_id         INTERGER REFERENCES exchanges(exchange_id),
+    exchange_id         INTEGER REFERENCES exchanges(exchange_id),
     issuer_id           INTEGER REFERENCES issuers(issuer_id),
     reit_segment_id     INTEGER REFERENCES reit_segments(reit_segment_id) -- only for REITs / so para FIIs
 );
 
 -- Corretoras e bancos custodiantes
 CREATE TABLE institutions (
-    institutions_id         INTEGER PRIMARY KEY,
+    institution_id          INTEGER PRIMARY KEY,
     name                    TEXT NOT NULL UNIQUE, -- XP, BTG, Nunvest
     tax_id                  TEXT UNIQUE,
-    institutions_type_id    INTEGER NOT NULL REFERENCES institutions_types(institutions_type_id),
+    institution_type_id     INTEGER NOT NULL REFERENCES institution_types(institution_type_id),
     country_id              INTEGER NOT NULL REFERENCES countries(country_id)
 );
 
@@ -175,7 +175,7 @@ CREATE TABLE series (
     code            INTEGER PRIMARY KEY, -- ex: numero da serie no SGS
     name            TEXT NOT NULL, -- CPI, CDIm policy rate / IPCA, CDI, Selic
     unit            TEXT NOT NULL, -- %, index points, BRL/USD
-    frequency       INTEGER NOT NULL REFERENCES frequencies(frequency_id),
+    frequency_id    INTEGER NOT NULL REFERENCES frequencies(frequency_id),
     data_source_id  INTEGER NOT NULL REFERENCES data_sources(data_source_id)
 );
 
@@ -190,29 +190,29 @@ CREATE TABLE quotes (
     low             REAL,
     close           REAL        NOT NULL, -- obrigatorio
     volume          INTEGER,
-    data_source_id  INTEGER REFERENCES data_sources(data_sources_id), -- procedencia do dado
+    data_source_id  INTEGER REFERENCES data_sources(data_source_id), -- procedencia do dado
     PRIMARY KEY (ticker, date),
     CHECK (high IS NULL OR low IS NULL OR high >= low)
 );
 
 -- Compras, vendas e eventos societarios que mexem na posicao
-CREATE TABLE trasactions (
-    trasaction_id          INTEGER PRIMARY KEY,
+CREATE TABLE transactions (
+    transaction_id          INTEGER PRIMARY KEY,
     ticker                  TEXT    NOT NULL REFERENCES assets(ticker),
-    DATABASE                TEXT    NOT NULL REFERENCES calender(date),
-    instituition_id         INTEGER NOT NULL REFERENCES institutions(institution_id),
+    date                    TEXT    NOT NULL REFERENCES calendar(date),
+    institution_id          INTEGER NOT NULL REFERENCES institutions(institution_id),
     portfolio_id            INTEGER NOT NULL REFERENCES portfolios(portfolio_id),
-    trasaction_type_id      INTEGER NOT NULL REFERENCES transaction_types(transaction_types_id),
+    transaction_type_id     INTEGER NOT NULL REFERENCES transaction_types(transaction_type_id),
     quantity                REAL    NOT NULL CHECK (quantity > 0),
     unit_price              REAL    NOT NULL CHECK (unit_price >= 0),
-    fees                    REAL    NOT NULL DEFAULT 0 CHECK (fess >= 0)
+    fees                    REAL    NOT NULL DEFAULT 0 CHECK (fees >= 0)
 );
 
 -- Dividendos, JCP e rendimentos de FII
 CREATE TABLE payouts (
     payout_id        INTEGER PRIMARY KEY,
     ticker           TEXT   NOT NULL REFERENCES assets(ticker),
-    intitution_id    INTEGER NOT NULL REFERENCES intitutions(instituion_id),
+    institution_id   INTEGER NOT NULL REFERENCES institutions(institution_id),
     portfolio_id     INTEGER REFERENCES portfolios(portfolio_id), -- attribution when split across portfolios
     payout_type_id   INTEGER NOT NULL REFERENCES payout_types(payout_type_id),
     ex_date          TEXT    NOT NULL REFERENCES calendar(date),  -- BR: data com / record date
@@ -233,20 +233,20 @@ CREATE TABLE indicators (
 -- Fundamentos trimestrais e anuais da empresa
 CREATE TABLE financial_statements (
     ticker          TEXT NOT NULL REFERENCES assets(ticker),
-    priod_end       TEXT NOT NULL REFERENCES calender(date),
+    period_end      TEXT NOT NULL REFERENCES calendar(date),
     net_revenue     REAL,
     net_income      REAL,
     ebitda          REAL,
     total_assets    REAL,
     total_debt      REAL,
-    PRIMARY KEY (ticker, priod_end)
+    PRIMARY KEY (ticker, period_end)
 );
 
 -- O SQLite nao indexa FK automaticamente. Os joins do floco dependem disso
 
 CREATE INDEX idx_assets_sector            ON assets(sector_id);
 CREATE INDEX idx_assets_category          ON assets(asset_category_id);
-CREATE INDEX idx_assets_issuer            ON assets(inssuer_id);
+CREATE INDEX idx_assets_issuer            ON assets(issuer_id);
 CREATE INDEX idx_assets_exchange          ON assets(exchange_id);
 
 CREATE INDEX idx_quotes_date              ON quotes(date);
@@ -284,10 +284,10 @@ JOIN asset_statuses st ON st.asset_status_id = a.asset_status_id
 LEFT JOIN sectors s ON s.sector_id = a.sector_id
 LEFT JOIN macro_sectors ms ON ms.macro_sector_id = s.macro_sector_id
 LEFT JOIN exchanges e ON e.exchange_id = a.exchange_id
-LEFT JOIN countries c ON c.country_id = e.countries_id
-LEFT JOIN currencies cur ON cur.currencies_id = e.currency_id
-LEFT JOIN inssuers i ON i.issuer_id = a.issuer_id
-LEFT JOIN reit_sefments rs ON rs.reit_segment_id = a.reit_segment_id;
+LEFT JOIN countries c ON c.country_id = e.country_id
+LEFT JOIN currencies cur ON cur.currency_id = e.currency_id
+LEFT JOIN issuers i ON i.issuer_id = a.issuer_id
+LEFT JOIN reit_segments rs ON rs.reit_segment_id = a.reit_segment_id;
 
 -- Compatibilidade com o seu 'assets' original, plano.
 -- Queries antigas seguem rodando
@@ -302,16 +302,17 @@ SELECT  ticker,
 FROM v_assets_full;
 
 -- Posicao atual por carteira, derivada do sinal da transacao.
+-- ATENCAO ao `+ t.fees`: a taxa SOMA ao custo, ela nao multiplica. Com `* t.fees` e o
+-- DEFAULT 0 da coluna, todo net_cost sairia 0.0 - um erro que nao estoura, so mente.
 CREATE VIEW v_positions AS
 SELECT
     t.portfolio_id,
     p.name AS portfolio,
     t.ticker,
     SUM(t.quantity * tt.direction) AS quantity,
-    SUM(t.quantity * t.unit_price * tt.direction * t.fees) AS net_cost
-FROM trasactions t
-JOIN trasaction_types tt ON tt.direction_type_id = t.transaction_type_id
+    SUM(t.quantity * t.unit_price * tt.direction + t.fees) AS net_cost
+FROM transactions t
+JOIN transaction_types tt ON tt.transaction_type_id = t.transaction_type_id
 JOIN portfolios p ON p.portfolio_id = t.portfolio_id
 GROUP BY t.portfolio_id, p.name, t.ticker
 HAVING SUM(t.quantity * tt.direction) <> 0;
-
