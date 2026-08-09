@@ -1,356 +1,271 @@
-# Tests for the JSON connector.
+"""Reads JSON - from a file on disk or from a public URL - and returns a DataFrame.
+
+TWO ORIGINS, ONE CONTRACT. `source` is either a path or an address. When it starts
+with `http://` or `https://` the connector fetches it; otherwise it opens the file.
+The caller never has to say which: there is no `is_url` flag to get wrong. What the
+two universes MUST share is the failure: a missing file and a DNS that never resolved
+both mean "there is no data", and both leave here as the same `ConnectorError`.
+
+THE BORDER WITH api_connector.py: this connector has no API key, no query params and
+no special treatment for 429. It is for JSON that is simply public - the file you
+downloaded, the open endpoint of the Banco Central. The moment the source asks for
+authentication, `APIConnector` is the right tool.
+
+JSON IS NOT INHERENTLY TABULAR, which CSV never had to worry about. A file may hold a
+list of rows, a payload with the rows buried under keys, one bare object, or something
+that is not a table at all. Deciding what each shape becomes is the work of this module:
+
+    [{...}, {...}]      -> one row each
+    {...}               -> a single row
+    []                  -> an empty DataFrame ("no rows" is a valid answer)
+    42, [1, 2, 3]       -> refused; a nameless one-column frame would only push the
+                           confusion downstream into the detector
+
+THE CONNECTOR CONVERTS NOTHING. `"0.05"` and `"02/01/2026"` leave here exactly as they
+arrived. The chain is connector -> detector (decides) -> cleaning (converts); inferring
+a dtype here is already an opinion, and the opinion belongs to the detector.
+"""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
-import pytest
 import requests
 
-from datalens.connectors.base import Connector, ConnectorError
-from datalens.connectors.json_connector import JSONConnector
+from .base import ConnectorError, validate_path
 
-# Fixtures
+# Without a timeout `requests` waits forever: a source that is down freezes the whole
+# app, which in Streamlit is a tab loading eternally, with no error and no data.
+DEFAULT_TIMEOUT = 30
 
-@pytest.fixture
-def json_records(tmp_path: Path) -> Path:
-    """The easy shape: a list of flat objects, one per row."""
-    path = tmp_path / "quotes.json"
-    path.write_text(
-        json.dumps(
-            [
-                {"ticker": "PETR4.SA", "date": "2026-01-02", "close": 40.0},
-                {"ticker": "PETR4.SA", "date": "2026-01-03", "close": 41.5},
-                {"ticker": "AAPL", "date": "2026-01-02", "close": 210.0},
-            ]
-        ),
-        encoding="utf-8"
-    )
-    return path
+URL_SCHEMES = ("http://", "https://")
 
-@pytest.fixture
-def nested_json(tmp_path: Path) -> Path:
-    """The shape a real API returns: the rows are buried under keys."""
-    path = tmp_path 
-    "nested.json"
-    path.write_text(
-        json.dumps(
-            {
-                "status": "ok",
-                "data": {
-                    "items": [
-                        {"codigo": 11, "valor": 0.05},
-                        {"codigo": 11, "valor": 0.06},
-                    ]
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    return path
 
-@pytest.fixture
-def json_file(tmp_path: Path) -> Path:
-    """JSON Lines: one JSON object per line, no enclosing list."""
-    path = tmp_path / "events.jsonl"
-    path.write_text(
-        '{"ticker": "PETR4.SA", "close": 40.0}\n{"ticker": "AAPL", "close": 210.0}\n',
-        encoding="utf-8",
-    )
-    return path
+class JSONConnector:
+    """Reads JSON from a local file or a public URL and returns it as a DataFrame.
 
-@pytest.fixture
-def fake_get(monkeypatch):
-    """Replaces requests.get with something we control"""
+    Args:
+        source: a file path or an `http(s)` address. The prefix decides which.
+        records_path: dotted path down to the list of records inside the payload,
+            e.g. `"data.items"` for `{"data": {"items": [...]}}`. Leave empty when
+            the payload already is the list (or the single object).
+        encoding: how to decode the file on disk. Ignored for URLs, where the
+            server declares it.
+        lines: read JSON Lines - one JSON object per line, no enclosing list. It is
+            what log exporters and data dumps produce, and a plain `json.loads`
+            raises on it.
+        timeout: seconds to wait before giving up on the request.
 
-    class FakeResponse:
-        def __init__(self, payload=None, status_code=200, text=""):
-            self._payload = payload
-            self.status_code = status_code
-            self.text = text or json.dump(payload)
-
-        def json(self):
-            if self._payload is None:
-                raise ValueError("No JSON object could be decoded")
-            return self._payload
-
-        def raise_for_status(self):
-            if self.status_code >= 400:
-                raise requests.HTTPError(f"{self.status_code} Error", response=self)
-
-    def install(payload=None, status_code=200, text="", error=None):
-        def _get(*args, **kwargs):
-            if error is not None:
-                raise error
-            return FakeResponse(payload, status_code, text)
-
-        monkeypatch.setattr(requests, "get", _get)
-
-    install.response = FakeResponse
-    return install
-
-# The contract
-
-def test_jsoArrangen_connector_satisfies_the_contract_without_inheriting_from_it(json_records):
-    # Arrange
-    connector = JSONConnector(str(json_records))
-
-    # Act / Assert
-    assert isinstance(connector, Connector)
-    assert Connector not in JSONConnector.__mro__
-
-# Reading from disk
-
-def test_a_list_of_objects_becomes_one_row_each(json_records):
-    # Arrange
-    connector = JSONConnector(str(json_records))
-
-    # Act
-    result = connector.load()
-
-    # Assert
-    assert isinstance(result, pd.DataFrame)
-    assert result.shape == (3, 3)
-    assert list(result.columns) == ["ticker", "date", "close"]
-    assert result["close"][0] == 40.0
-
-def test_load_accepts_a_path_object_and_not_only_a_string(json_records: Path):
-    """validate_path takes'str | Path', so the connector should too."""
-    # Act
-    result = JSONConnector(json.records).load()
-
-    # Assert
-    assert result.shape == (3, 3)
-
-def test_records_can_be_dug_out_of_a_nested_payload(nested_json):
-    # Arrange
-    connector = JSONConnector(str(nested_json), records_path="data.items")
-
-    # Act
-    result = connector.load()
-
-    # Assert
-    assert list(result.columns) == ["codigo", "valor"]
-    assert result.shape == (2, 2)
-
-def test_json_lines_are_read_when_told_so(json_file):
-    # Arrange
-    connector = JSONConnector(str(json_file), lines=True)
-
-    # Act
-    result = connector.load()
-
-    # Assert
-    assert result.shape == (2, 2)
-    assert result["ticker"][1] == "AAPL"
-
-def test_a_bare_object_becomes_a_single_row(tmp_path: Path):
-    """'{"a": 1, "b": 2}' is not a list, but it is one row."""
-    # Arrange
-    path = tmp_path / "one.json"
-    path.write_text('{"ticker": "AAPL", "close": 210.0}', encoding="utf-8")
-
-    # Act
-    result = JSONConnector(str(path)).load()
-
-    # Assert
-    assert result.shape == (1, 2)
-
-def test_an_empty_list_is_an_empty_dataframe_not_an_error(tmp_path: Path):
-    """'No rows' is a valid answer. An empty file is not - see below"""
-    # Arrange
-    path = tmp_path / "none.json"
-    path.write_text("[]", encoding="utf-8")
-
-    # Act
-    result = JSONConnector(str(path)).load()
-
-    # Assert
-    assert result.empty
-
-def test_missing_keys_across_records_become_missing_values(tmp_path: Path):
-    """JSON has no schema: record 2 simply lacks"""
-    # Arrange
-    path = tmp_path / "ragged.json"
-    path.write_text(
-        '[{"ticker": "AAPL", "close": 210.0}, {"ticker": "KO"}]', encoding="utf-8"
-    )
-
-    # Act
-    result = JSONConnector(str(path)).load()
-
-    # Assert
-    assert result.shape == (2, 2)
-    assert pd.isna(result["volume"][1])
-
-# Reading from a URL
-
-def test_a_source_starting_with_htto_is_fetched_instead_of_opened(fake_get):
-    """The whole point of the two-origin design"""
-    # Arrange
-    fake_get(payload=[{"data": "02/01/2026", "valor": "0.05"}])
-
-    # Act
-    result = JSONConnector(
-        "https://api.bcb.gov.br/dados/serie/bcdata.sgs.11/dados?formato=json"
-    ).load()
-
-    # Assert
-    assert result.shape == (1, 2)
-
-def test_records_path_works_the_same_over_the_network(fake_get):
-    # Arrange
-    fake_get(payload={"data": {"items": [{"codigo": 1, "valor": 5.4}]}})
-
-    # Act
-    result = JSONConnector("https://x.com", records_path="data.items").load()
-
-    # Assert
-    assert list(result.columns) == ["codigo", "valor"]
-
-# Failures on disk
-
-def test_a_missing_file_is_reported_as_a_connector_error(tmp_path: Path):
-    # Arrange
-    connector = JSONConnector(str(tmp_path / "does_not_exists.json"))
-
-    # Act / Assert
-    with pytest.raises(ConnectorError, match="File not found"):
-        connector.load()
-
-def test_a_directory_is_reported_as_a_connector_error(tmp_path: Path):
-    with pytest.raises(ConnectorError, match="directory"):
-        JSONConnector(str(tmp_path)).load()
-
-def test_an_empty_file_is_reported_as_a_connector_error(tmp_path: Path):
-    """Distinct from `[]`: an empty file means the download failed or the export never ran.
-    Silently returning zero rows would hide that."""
-    # Arrange
-    path = tmp_path / "empty.json"
-    path.write_text("", Encoding="utf-8")
-
-    # Act / Assert
-    with pytest.raises(ConnectorError, match="empty"):
-        JSONConnector(str(path)).load()
-
-def test_malformed_json_names_the_position_of_the_problem(tmp_path: Path):
-    """json.JSONDecodeError knows the line and column. Passing that through turns
-    'invalid JSON' into something the user can actually go fix."""
-    # Arrange - trailing comma, the classic
-    path = tmp_path / "broken_json"
-    path.write_text('[{"a": 1},]', encoding="utf-8")
-
-    # Act / Assert
-    with pytest.raises(ConnectionError, match="line|linha"):
-        JSONConnector(str(path)).load()
-
-def test_the_wrong_encoding_suggests_the_fix(tmp_path: Path):
-    """A latin-1 file read as utf-8 raises - the message should say what to try,
-    exactly like the CSV connector does.
+    Example:
+        >>> JSONConnector("data/quotes.json").load()
+        >>> JSONConnector("https://x.com/series", records_path="data.items").load()
     """
-    # Arrange
-    path = tmp_path / "latin.json"
-    path.write_bytes('[{"nome": "ação"}]'.encode("latin-1"))
 
-    # Act / Assert
-    with pytest.raises(ConnectorError, math="latin-1"):
-        JSONConnector(str(path)).load()
+    def __init__(
+        self,
+        source: str | Path,
+        records_path: str | None = None,
+        encoding: str = "utf-8",
+        lines: bool = False,
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> None:
+        self.source = source
+        self.records_path = records_path
+        self.encoding = encoding
+        self.lines = lines
+        self.timeout = timeout
 
-def test_json_lines_read_without_the_flag_fails_clearly(jsonl_file):
-    """The likeliest user mistake with .jsonl. The message must name the option."""
-    # Arrange - lines defaults to False
-    connector = JSONConnector(str(jsonl_file))
+    # --- The contract ---------------------------------------------------------
 
-    # Act / Assert
-    with pytest.raises(ConnectorError, math="lines"):
-        connector.load()
+    def load(self) -> pd.DataFrame:
+        """Reads the source, digs out the records and builds the DataFrame."""
+        payload = self._fetch() if self._is_url else self._read_file()
+        records = self._extract_records(payload)
 
-# Failures over the network
+        # `json_normalize` and not `DataFrame` because JSON payloads nest:
+        # {"price": {"open": 10}} becomes the column `price.open` instead of one
+        # column holding a dict, which nothing downstream would know how to read.
+        # It flattens structure - it does not convert values.
+        return self._as_plain_objects(pd.json_normalize(records))
 
-def test_a_404_says_the_address_is_wrong(fake_get):
-    # Arrange
-    fake_get(payload={}, status_code=404)
+    @property
+    def _is_url(self) -> bool:
+        """The whole two-origin decision, in one line and in one place."""
+        return str(self.source).lower().startswith(URL_SCHEMES)
 
-    # Act / Assert
-    with pytest.raises(ConnectorError, math="404"):
-        JSONConnector("https://x.com/wrong").load()
+    @staticmethod
+    def _as_plain_objects(frame: pd.DataFrame) -> pd.DataFrame:
+        """Keeps text columns as plain Python objects instead of a typed string column.
 
-def test_a_timeout_is_reported_as_a_connector_error(fake_get):
-    # Arrange
-    fake_get(error=requests.Timeout("timed out"))
+        pandas infers a `str` dtype for text on its own, and that inference is already
+        a decision about the data - the one decision this connector is not allowed to
+        make. Numeric columns keep the dtype pandas built them with.
+        """
+        text_columns = [
+            column
+            for column in frame.columns
+            if isinstance(frame[column].dtype, pd.StringDtype)
+        ]
 
-    # Act / Assert
-    with pytest.raises(ConnectorError, mathe="timeout|tempo"):
-        JSONConnector("https://x.com", timeout=1).load()
+        if not text_columns:
+            return frame
 
-def test_a_connection_error_is_reported_as_a_connector_error(fake_get):
-    # Arrange
-    fake_get(error=requests.ConnectionError("no route to host"))
+        return frame.astype({column: object for column in text_columns})
 
-    # Act / Assert
-    with pytest.raises(ConnectorError):
-        JSONConnector("https://x.com").load()
+    # --- Origin one: the disk -------------------------------------------------
 
-def test_an_html_error_page_with_status_200_is_reported_as_not_json(fake_get):
-    """A captive portal or a maintenance page answers 200 with HTML. Without this
-    branch the user gets 'Expecting value: line 1 column 1' and no idea why.
-    """
-    # Arrange
-    fake_get(payload=None, text="<html>Service unavailable</html>")
+    def _read_file(self) -> Any:
+        """Opens the file, decodes it and turns the text into Python objects."""
+        # `validate_path` first, so "file not found" reads the same here as it does
+        # in the CSV and the Excel connectors.
+        target = validate_path(self.source)
 
-    # Act / Assert
-    with pytest.raises(ConnectorError, match="JSON"):
-        JSONConnector("https://x.com").load()
+        try:
+            text = target.read_bytes().decode(self.encoding)
+        except UnicodeDecodeError as error:
+            raise ConnectorError(
+                "csv_encoding_failed", path=target, encoding=repr(self.encoding)
+            ) from error
 
-# The failure that both origins share
+        # An empty file is NOT the same as `[]`: it means the download failed or the
+        # export never ran. Returning zero rows silently would hide that.
+        if not text.strip():
+            raise ConnectorError("csv_empty_file", path=target)
 
-def test_a_wrong_records_path_names_the_path_it_tried(nested_json):
-    """'Path not found' is useless when the config has three paths in it."""
-    # Arrange
-    connector = JSONConnector(str(nested_json), records_path="data.results")
+        return self._parse(text, origin=target)
 
-    # Act / Assert
-    with pytest.raises(ConnectorError, match="data.results"):
-        connector.load()
+    # --- Origin two: the network ----------------------------------------------
 
-def test_a_payload_that_is_not_a_table_is_refused(tmp_path: Path):
-    """`[1, 2, 3]` and `42` are valid JSON and are not tables. Turning them into
-    a nameless one-column frame would push the confusion downstream into the
-    detector, where it is much harder to explain.
-    """
-    # Arrange
-    path = tmp_path / "scalar.json"
-    path.write_text("42", encoding="utf-8")
+    def _fetch(self) -> Any:
+        """Requests the address and turns the answer into Python objects."""
+        try:
+            response = requests.get(str(self.source), timeout=self.timeout)
+            # Without `raise_for_status` a 404 would travel on as a valid answer and
+            # surface later as "not JSON", hiding the real cause.
+            response.raise_for_status()
 
-    # Act / Assert
-    with pytest.raises(ConnectorError, match="table|tabela"):
-        JSONConnector(str(path)).load()
+        # Subclasses before the base class, or they never run: Timeout, ConnectionError
+        # and HTTPError are all RequestException, and the first matching clause wins.
+        except requests.Timeout as error:
+            raise ConnectorError("api_timeout", timeout=self.timeout) from error
 
-def test_the_original_exception_is_preserved_as_the_cause(tmp_path: Path):
-    """`raise ... from error` keeps the traceback. Losing it makes the friendly
-    message a downgrade rather than an improvement.
-    """
-    # Arrange
-    path = tmp_path / "broken.json"
-    path.write_text("{not json", encoding="utf-8")
+        except requests.ConnectionError as error:
+            raise ConnectorError("api_connection_failed", host=self.source) from error
 
-    # Act / Assert
-    with pytest.raises(ConnectorError) as caught:
-        JSONConnector(str(path)).load()
-    assert isinstance(caught.value.__cause__, json.JSONDecodeError)
+        except requests.HTTPError as error:
+            status = getattr(error.response, "status_code", None)
+            raise ConnectorError("api_http_error", status=status) from error
 
-def test_the_error_message_is_the_same_kind_whatever_the_origin(tmp_path, fake_get):
-    """The two-origin design only pays off if the caller never has to branch on
-    where the data came from. One exception type, both universes.
-    """
-    # Arrange
-    fake_get(error=requests.ConnectionError("no route to host"))
+        except requests.RequestException as error:
+            raise ConnectorError("api_connection_failed", host=self.source) from error
 
-    # Act / Assert
-    with pytest.raises(ConnectorError):
-        JSONConnector("https://x.com").load()
-    with pytest.raises(ConnectorError):
-        JSONConnector(str(tmp_path / "nope.json")).load()
-        
+        if self.lines:
+            return self._parse(response.text, origin=self.source)
+
+        # A maintenance page or a captive portal answers 200 with HTML, and the raw
+        # `Expecting value: line 1 column 1` tells the user nothing.
+        try:
+            return response.json()
+        except ValueError as error:
+            raise ConnectorError("api_not_json", host=self.source) from error
+
+    # --- Text into Python objects ---------------------------------------------
+
+    def _parse(self, text: str, origin: Any) -> Any:
+        """Decodes the text, keeping the position of the problem in the message."""
+        if self.lines:
+            return self._parse_lines(text, origin)
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as error:
+            # The likeliest mistake with a .jsonl file is forgetting the flag. Saying
+            # "invalid JSON" there sends the user hunting for a syntax error that is
+            # not present, so name the option instead.
+            if self._looks_like_json_lines(text):
+                raise ConnectorError("json_lines_expected", path=origin) from error
+
+            # `json.JSONDecodeError` knows the line and the column. Passing that
+            # through turns "invalid JSON" into something the user can go fix.
+            raise ConnectorError(
+                "json_invalid", path=origin, detail=str(error)
+            ) from error
+
+    def _parse_lines(self, text: str, origin: Any) -> list[Any]:
+        """One JSON object per line - the shape log exporters and data dumps produce."""
+        records: list[Any] = []
+
+        for number, line in enumerate(text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError as error:
+                raise ConnectorError(
+                    "json_invalid",
+                    path=origin,
+                    detail=f"line {number}: {error}",
+                ) from error
+
+        return records
+
+    @staticmethod
+    def _looks_like_json_lines(text: str) -> bool:
+        """True when every non-blank line is valid JSON on its own."""
+        lines = [line for line in text.splitlines() if line.strip()]
+
+        if len(lines) < 2:
+            return False
+
+        for line in lines:
+            try:
+                json.loads(line)
+            except json.JSONDecodeError:
+                return False
+
+        return True
+
+    # --- Digging the records out ----------------------------------------------
+
+    def _extract_records(self, payload: Any) -> Any:
+        """Walks the dotted path down to the records and checks the shape is a table.
+
+        Raises:
+            ConnectorError: when `records_path` does not exist in the payload - the
+                message names the path that was tried and the keys that do exist,
+                because "path not found" is useless when the config has three paths
+                in it - or when what sits at the end of it is not a table.
+        """
+        current = payload
+        path = self.records_path or ""
+
+        for level in filter(None, path.split(".")):
+            if not isinstance(current, dict) or level not in current:
+                raise ConnectorError(
+                    "api_records_path_not_found",
+                    records_path=path,
+                    available=self._available_keys(current),
+                )
+            current = current[level]
+
+        # A bare object is not a list, but it IS one row. Rejecting it would be
+        # pedantic; returning an empty frame would be worse.
+        if isinstance(current, dict):
+            return [current]
+
+        if not isinstance(current, list) or not all(
+            isinstance(item, dict) for item in current
+        ):
+            raise ConnectorError(
+                "json_not_tabular", path=self.source, found=type(current).__name__
+            )
+
+        return current
+
+    @staticmethod
+    def _available_keys(node: Any) -> Any:
+        """What the user could have written instead - keys, or the type when there are none."""
+        return list(node) if isinstance(node, dict) else type(node).__name__

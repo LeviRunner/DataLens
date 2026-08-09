@@ -105,6 +105,83 @@ CATALOG: dict[str, dict[str, str]] = {
             "Unknown missing-value strategy {strategy} for column {column}. "
             "Use one of: {valid}."
         ),
+        # config_loader.py
+        "config_file_not_found": (
+            "Config file not found: {path}. Create it, or point --config at the right one."
+        ),
+        "config_unreadable": (
+            "I couldn't parse the YAML in {path}: {detail}. Check the indentation and "
+            "the brackets."
+        ),
+        "config_empty": "The config file {path} is empty - there is nothing to configure.",
+        "config_missing_section": (
+            "The {section} section is missing from the config - without it there is no "
+            "data to read."
+        ),
+        "config_unknown_key": "Unknown key {key} in the config. Use one of: {valid}.",
+        "config_invalid_source_type": "Invalid source type {type}; use one of: {valid}.",
+        "config_missing_field": (
+            "A source of type {type} requires {field} - add it to the config."
+        ),
+        "config_conflicting_fields": (
+            "A source of type {type} takes only one of {fields}, and the config has more "
+            "than one. Delete the line you don't want."
+        ),
+        "config_unknown_column_type": (
+            "Unknown type {type} for column {column}. Use one of: {valid}."
+        ),
+        "config_missing_query_parameter": (
+            "The query uses :{parameter}, but no value was given for it. Add it under "
+            "`parameters:` - never paste the value into the query."
+        ),
+        # api_connector.py
+        "api_missing_env_key": (
+            "The environment variable {variable} is not set. The API key is read from "
+            "the environment, never from the config file."
+        ),
+        "api_timeout": (
+            "The API did not answer within {timeout}s. Try again, or raise `timeout` "
+            "in the configuration."
+        ),
+        "api_http_error": (
+            "The API answered with status {status}. Check the address in the config."
+        ),
+        "api_rate_limited": (
+            "The API is refusing requests for now (429): too many in too little time. "
+            "Wait a moment before trying again."
+        ),
+        "api_connection_failed": (
+            "I couldn't reach {host}. Check the address and your connection."
+        ),
+        "api_not_json": (
+            "The answer from {host} is not JSON - the server probably returned an error "
+            "page. Check the address."
+        ),
+        "api_records_path_not_found": (
+            "I couldn't find the records at {records_path} in the answer. "
+            "Available keys: {available}."
+        ),
+        # json_connector.py
+        "json_invalid": (
+            "I couldn't read the JSON in {path}: {detail}. The file is not valid JSON."
+        ),
+        "json_lines_expected": (
+            "{path} looks like JSON Lines - one object per line, not one enclosing "
+            "list. Set `lines: true` in the configuration."
+        ),
+        "json_not_tabular": (
+            "The JSON in {path} is not a table: {found}. A table is a list of objects, "
+            "or one object holding such a list."
+        ),
+        # sql_connector.py
+        "sql_foreign_key_violation": (
+            "The operation breaks a foreign key in {connection}: {detail}. Load the "
+            "dimension row before the fact row."
+        ),
+        # statistics.py
+        "trend_series_too_short": (
+            "{count} point(s) is not a trend in {column} - at least {minimum} are needed."
+        ),
         # i18n.py itself
         "unsupported_language": (
             "Unsupported language {language}. Use one of: {valid}."
@@ -148,6 +225,79 @@ CATALOG: dict[str, dict[str, str]] = {
             "Estratégia de faltantes desconhecida {strategy} para a coluna {column}. "
             "Use uma destas: {valid}."
         ),
+        "config_file_not_found": (
+            "Arquivo de configuração não encontrado: {path}. Crie o arquivo, ou aponte "
+            "--config para o caminho certo."
+        ),
+        "config_unreadable": (
+            "Não consegui interpretar o YAML em {path}: {detail}. Confira a indentação "
+            "e os colchetes."
+        ),
+        "config_empty": "O arquivo de configuração {path} está vazio - não há o que configurar.",
+        "config_missing_section": (
+            "Falta a seção {section} na configuração - sem ela não há dado para ler."
+        ),
+        "config_unknown_key": "Chave desconhecida {key} na configuração. Use uma destas: {valid}.",
+        "config_invalid_source_type": "Tipo de fonte inválido {type}; use um destes: {valid}.",
+        "config_missing_field": (
+            "Uma fonte do tipo {type} exige {field} - acrescente na configuração."
+        ),
+        "config_conflicting_fields": (
+            "Uma fonte do tipo {type} aceita apenas um entre {fields}, e a configuração "
+            "tem mais de um. Apague a linha que você não quer."
+        ),
+        "config_unknown_column_type": (
+            "Tipo desconhecido {type} para a coluna {column}. Use um destes: {valid}."
+        ),
+        "config_missing_query_parameter": (
+            "A consulta usa :{parameter}, mas nenhum valor foi informado. Acrescente em "
+            "`parameters:` - nunca cole o valor dentro da consulta."
+        ),
+        "api_missing_env_key": (
+            "A variável de ambiente {variable} não está definida. A chave da API é lida "
+            "do ambiente, nunca do arquivo de configuração."
+        ),
+        "api_timeout": (
+            "A API não respondeu em {timeout}s. Tente de novo, ou aumente o `timeout` "
+            "na configuração."
+        ),
+        "api_http_error": (
+            "A API respondeu com status {status}. Confira o endereço na configuração."
+        ),
+        "api_rate_limited": (
+            "A API está recusando as chamadas agora (429): pedidos demais em tempo de "
+            "menos. Espere um momento antes de tentar outra vez."
+        ),
+        "api_connection_failed": (
+            "Não consegui alcançar {host}. Confira o endereço e a sua conexão."
+        ),
+        "api_not_json": (
+            "A resposta de {host} não é JSON - o servidor provavelmente devolveu uma "
+            "página de erro. Confira o endereço."
+        ),
+        "api_records_path_not_found": (
+            "Não encontrei os registros em {records_path} na resposta. "
+            "Chaves disponíveis: {available}."
+        ),
+        "json_invalid": (
+            "Não consegui ler o JSON em {path}: {detail}. O arquivo não é JSON válido."
+        ),
+        "json_lines_expected": (
+            "{path} parece ser JSON Lines - um objeto por linha, sem lista externa "
+            "envolvendo tudo. Defina `lines: true` na configuração."
+        ),
+        "json_not_tabular": (
+            "O JSON em {path} não é uma tabela: {found}. Uma tabela é uma lista de "
+            "objetos, ou um objeto que contenha essa lista."
+        ),
+        "sql_foreign_key_violation": (
+            "A operação viola uma chave estrangeira em {connection}: {detail}. Carregue "
+            "a linha da dimensão antes da linha do fato."
+        ),
+        "trend_series_too_short": (
+            "{count} ponto(s) não é tendência em {column} - são necessários pelo menos "
+            "{minimum}."
+        ),
         "unsupported_language": (
             "Idioma não suportado {language}. Use um destes: {valid}."
         ),
@@ -189,6 +339,79 @@ CATALOG: dict[str, dict[str, str]] = {
         "unknown_strategy": (
             "Estrategia de faltantes desconocida {strategy} para la columna {column}. "
             "Usa una de estas: {valid}."
+        ),
+        "config_file_not_found": (
+            "Archivo de configuración no encontrado: {path}. Créalo, o apunta --config "
+            "a la ruta correcta."
+        ),
+        "config_unreadable": (
+            "No pude interpretar el YAML en {path}: {detail}. Revisa la indentación y "
+            "los corchetes."
+        ),
+        "config_empty": "El archivo de configuración {path} está vacío - no hay nada que configurar.",
+        "config_missing_section": (
+            "Falta la sección {section} en la configuración - sin ella no hay datos que leer."
+        ),
+        "config_unknown_key": "Clave desconocida {key} en la configuración. Usa una de estas: {valid}.",
+        "config_invalid_source_type": "Tipo de fuente inválido {type}; usa uno de estos: {valid}.",
+        "config_missing_field": (
+            "Una fuente de tipo {type} exige {field} - agrégalo a la configuración."
+        ),
+        "config_conflicting_fields": (
+            "Una fuente de tipo {type} acepta solo uno entre {fields}, y la configuración "
+            "tiene más de uno. Borra la línea que no quieras."
+        ),
+        "config_unknown_column_type": (
+            "Tipo desconocido {type} para la columna {column}. Usa uno de estos: {valid}."
+        ),
+        "config_missing_query_parameter": (
+            "La consulta usa :{parameter}, pero no se dio ningún valor. Agrégalo en "
+            "`parameters:` - nunca pegues el valor dentro de la consulta."
+        ),
+        "api_missing_env_key": (
+            "La variable de entorno {variable} no está definida. La clave de la API se "
+            "lee del entorno, nunca del archivo de configuración."
+        ),
+        "api_timeout": (
+            "La API no respondió en {timeout}s. Inténtalo de nuevo, o sube el `timeout` "
+            "en la configuración."
+        ),
+        "api_http_error": (
+            "La API respondió con estado {status}. Revisa la dirección en la configuración."
+        ),
+        "api_rate_limited": (
+            "La API está rechazando las llamadas ahora (429): demasiadas peticiones en "
+            "muy poco tiempo. Espera un momento antes de reintentar."
+        ),
+        "api_connection_failed": (
+            "No pude alcanzar {host}. Revisa la dirección y tu conexión."
+        ),
+        "api_not_json": (
+            "La respuesta de {host} no es JSON - el servidor probablemente devolvió una "
+            "página de error. Revisa la dirección."
+        ),
+        "api_records_path_not_found": (
+            "No encontré los registros en {records_path} en la respuesta. "
+            "Claves disponibles: {available}."
+        ),
+        "json_invalid": (
+            "No pude leer el JSON en {path}: {detail}. El archivo no es JSON válido."
+        ),
+        "json_lines_expected": (
+            "{path} parece ser JSON Lines - un objeto por línea, sin una lista externa "
+            "que lo envuelva. Define `lines: true` en la configuración."
+        ),
+        "json_not_tabular": (
+            "El JSON en {path} no es una tabla: {found}. Una tabla es una lista de "
+            "objetos, o un objeto que contenga esa lista."
+        ),
+        "sql_foreign_key_violation": (
+            "La operación viola una clave foránea en {connection}: {detail}. Carga la "
+            "fila de la dimensión antes que la del hecho."
+        ),
+        "trend_series_too_short": (
+            "{count} punto(s) no es una tendencia en {column} - se necesitan al menos "
+            "{minimum}."
         ),
         "unsupported_language": (
             "Idioma no soportado {language}. Usa uno de estos: {valid}."

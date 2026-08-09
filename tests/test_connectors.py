@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from sqlalchemy import create_engine
 
 from datalens.connectors.base import Connector, ConnectorError, validate_path
 from datalens.connectors.sql_connector import SQLConnector
@@ -179,3 +180,121 @@ def test_the_original_exception_is_preserved_as_the_cause(sample_db):
     with pytest.raises(ConnectorError) as caught:
         connector.load()
     assert caught.value.__cause__ is not None
+
+
+# --- SQLConnector: referential integrity is alive, not just declared ------------
+
+
+def test_an_orphan_row_is_refused_by_the_snowflake(snowflake_db):
+    """`PRAGMA foreign_keys = ON` is per CONNECTION in SQLite, not per database. The
+    schema declares the foreign keys either way; only the pragma makes them bite.
+    'GHOST' is not in `assets`, so this INSERT has to be refused.
+    """
+    # Arrange
+    connector = SQLConnector(
+        snowflake_db,
+        "INSERT INTO quotes (ticker, date, close) VALUES ('GHOST', '2026-01-02', 1.0)",
+    )
+
+    # Act / Assert
+    with pytest.raises(ConnectorError) as caught:
+        connector.load()
+    assert caught.value.message.code == "sql_foreign_key_violation"
+
+
+def test_foreign_keys_false_lets_the_same_orphan_row_in(snowflake_db):
+    """The contrast is what proves the listener does the work: same database, same
+    statement, only the flag changed. `foreign_keys=False` stays legitimate for bulk
+    loading, where rows arrive out of dependency order.
+    """
+    # Arrange
+    writer = SQLConnector(
+        snowflake_db,
+        "INSERT INTO quotes (ticker, date, close) VALUES ('GHOST', '2026-01-02', 1.0)",
+        foreign_keys=False,
+    )
+
+    # Act
+    writer.load()
+
+    # Assert - the orphan really landed, it was not just tolerated in memory
+    survivors = SQLConnector(
+        snowflake_db, "SELECT COUNT(*) AS n FROM quotes WHERE ticker = 'GHOST'"
+    ).load()
+    assert survivors["n"][0] == 1
+
+
+def test_the_pragma_holds_on_the_second_connection_of_the_same_engine(snowflake_db):
+    """The exact pool bug the event listener exists for.
+
+    SQLAlchemy pools connections: running the pragma once right after `connect()`
+    protects ONE connection, and the next query may be served by another. The two
+    connections are opened at the same time on purpose - that forces the pool to hand
+    out a second, brand-new DBAPI connection instead of recycling the first.
+    """
+    # Arrange
+    connector = SQLConnector(snowflake_db, "SELECT 1")
+    engine = create_engine(snowflake_db)
+    connector._enforce_foreign_keys(engine)
+
+    # Act
+    try:
+        with engine.connect() as first, engine.connect() as second:
+            pragmas = [
+                first.exec_driver_sql("PRAGMA foreign_keys").scalar(),
+                second.exec_driver_sql("PRAGMA foreign_keys").scalar(),
+            ]
+    finally:
+        engine.dispose()
+
+    # Assert
+    assert pragmas == [1, 1]
+
+
+# --- SQLConnector: reading the snowflake ---------------------------------------
+
+
+def test_a_join_across_the_snowflake_returns_the_flattened_rows(snowflake_db):
+    """A fact table only becomes readable joined to its dimension: `quotes` knows the
+    ticker, `assets` knows the name. This is what the connector is ultimately for.
+    """
+    # Arrange
+    connector = SQLConnector(
+        snowflake_db,
+        "SELECT q.ticker, a.name AS asset_name, q.close "
+        "FROM quotes q JOIN assets a ON a.ticker = q.ticker "
+        "WHERE q.ticker = :ticker ORDER BY q.date",
+        {"ticker": "PETR4.SA"},
+    )
+
+    # Act
+    result = connector.load()
+
+    # Assert
+    assert isinstance(result, pd.DataFrame)
+    assert list(result.columns) == ["ticker", "asset_name", "close"]
+    assert list(result["close"]) == [40.0, 41.5]
+    assert set(result["asset_name"]) == {"Petrobras PN"}
+
+
+# --- SQLConnector: the connection string is a credential -----------------------
+
+
+def test_the_password_of_a_connection_string_never_reaches_the_error():
+    """A connection string carries a secret. Handing `repr(self.connection)` to the
+    message parameters leaks that password into the structured log AND onto the
+    screen - two places where a database password must never be written down.
+    """
+    # Arrange
+    connector = SQLConnector("postgresql://user:senha@host/db", "SELECT 1")
+
+    # Act
+    with pytest.raises(ConnectorError) as caught:
+        connector.load()
+    error = caught.value
+
+    # Assert - not in the English sentence, not in the parameters that build any other
+    assert "senha" not in str(error)
+    assert all("senha" not in str(value) for value in error.message.params.values())
+    assert "***" in str(error)
+    assert "host/db" in str(error)  # still identifies WHICH database failed

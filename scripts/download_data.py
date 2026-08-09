@@ -1,13 +1,21 @@
 """Baixa os dados financeiros públicos de exemplo e monta o banco SQLite local.
 
 Uso:
-    python scripts/download_data.py            # 2 anos de histórico (padrão)
-    python scripts/download_data.py --anos 5
+    python scripts/download_data.py                          # 5 anos (padrão)
+    python scripts/download_data.py --anos 2
+    python scripts/download_data.py --inicio 2026-01-01 --fim 2026-01-31
+
+`--anos` conta para trás a partir de hoje; `--inicio`/`--fim` recortam uma janela
+exata, que é o que responde "quanto ocupa um mês fechado?" sem baixar cinco anos.
 
 Gera em data/exemplos/:
-    financas.db        banco SQLite com as tabelas ativos, cotacoes e indicadores
+    finance.db         banco SQLite com as tabelas assets, quotes, series e indicators
     acoes_b3.csv       cotações das ações da B3
     acoes_eua.csv      cotações das ações dos EUA
+
+Os nomes são os mesmos de scripts/schema.sql — em inglês. O script nasceu em
+português e ficou para trás quando o resto do projeto migrou; um banco com `quotes`
+e `cotacoes` lado a lado é pior que qualquer um dos dois sozinho.
 
 Fontes (ambas públicas, sem chave de API — ver data/exemplos/README.md):
     Yahoo Finance  -> cotações diárias das ações
@@ -34,7 +42,7 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 DESTINO = RAIZ / "data" / "exemplos"
-BANCO = DESTINO / "financas.db"
+BANCO = DESTINO / "finance.db"
 
 TIMEOUT_SEGUNDOS = 30
 PAUSA_ENTRE_REQUISICOES = 1.0  # respeita o rate limit das APIs públicas
@@ -168,48 +176,52 @@ def criar_esquema(conexao: sqlite3.Connection) -> None:
     """(Re)cria as tabelas do zero — o script é idempotente por design."""
     conexao.executescript(
         """
+        DROP TABLE IF EXISTS quotes;
+        DROP TABLE IF EXISTS assets;
+        DROP TABLE IF EXISTS indicators;
+        DROP TABLE IF EXISTS series;
+        -- Restos da versão em português, se o banco vier de um download antigo.
         DROP TABLE IF EXISTS cotacoes;
         DROP TABLE IF EXISTS ativos;
         DROP TABLE IF EXISTS indicadores;
-        DROP TABLE IF EXISTS series;
 
-        CREATE TABLE ativos (
-            ticker  TEXT PRIMARY KEY,
-            nome    TEXT NOT NULL,
-            tipo    TEXT NOT NULL,
-            pais    TEXT NOT NULL,
-            moeda   TEXT NOT NULL,
-            setor   TEXT NOT NULL,
-            bolsa   TEXT NOT NULL
+        CREATE TABLE assets (
+            ticker    TEXT PRIMARY KEY,
+            name      TEXT NOT NULL,
+            type      TEXT NOT NULL,
+            country   TEXT NOT NULL,
+            currency  TEXT NOT NULL,
+            sector    TEXT NOT NULL,
+            exchange  TEXT NOT NULL
         );
 
-        CREATE TABLE cotacoes (
-            ticker      TEXT NOT NULL REFERENCES ativos(ticker),
-            data        TEXT NOT NULL,
-            abertura    REAL,
-            maxima      REAL,
-            minima      REAL,
-            fechamento  REAL NOT NULL,
-            volume      INTEGER,
-            PRIMARY KEY (ticker, data)
+        CREATE TABLE quotes (
+            ticker  TEXT NOT NULL REFERENCES assets(ticker),
+            date    TEXT NOT NULL,
+            open    REAL,
+            high    REAL,
+            low     REAL,
+            close   REAL NOT NULL,
+            volume  INTEGER,
+            PRIMARY KEY (ticker, date)
         );
 
         CREATE TABLE series (
-            codigo    INTEGER PRIMARY KEY,
-            nome      TEXT NOT NULL,
-            unidade   TEXT NOT NULL,
-            frequencia TEXT NOT NULL
+            code       INTEGER PRIMARY KEY,
+            name       TEXT NOT NULL,
+            unit       TEXT NOT NULL,
+            frequency  TEXT NOT NULL
         );
 
-        CREATE TABLE indicadores (
-            codigo  INTEGER NOT NULL REFERENCES series(codigo),
-            data    TEXT NOT NULL,
-            valor   REAL NOT NULL,
-            PRIMARY KEY (codigo, data)
+        CREATE TABLE indicators (
+            code   INTEGER NOT NULL REFERENCES series(code),
+            date   TEXT NOT NULL,
+            value  REAL NOT NULL,
+            PRIMARY KEY (code, date)
         );
 
-        CREATE INDEX idx_cotacoes_data ON cotacoes(data);
-        CREATE INDEX idx_indicadores_data ON indicadores(data);
+        CREATE INDEX idx_quotes_date ON quotes(date);
+        CREATE INDEX idx_indicators_date ON indicators(date);
         """
     )
 
@@ -219,7 +231,7 @@ def exportar_csv(caminho: Path, linhas: list[tuple]) -> None:
     with caminho.open("w", newline="", encoding="utf-8") as arquivo:
         escritor = csv.writer(arquivo)
         escritor.writerow(
-            ["ticker", "data", "abertura", "maxima", "minima", "fechamento", "volume"]
+            ["ticker", "date", "open", "high", "low", "close", "volume"]
         )
         escritor.writerows(linhas)
 
@@ -230,15 +242,20 @@ def exportar_csv(caminho: Path, linhas: list[tuple]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--anos", type=int, default=2, help="anos de histórico a baixar (padrão: 2)"
+        "--anos", type=int, default=5, help="anos de histórico a baixar (padrão: 5)"
     )
+    parser.add_argument("--inicio", type=date.fromisoformat, help="data inicial (AAAA-MM-DD)")
+    parser.add_argument("--fim", type=date.fromisoformat, help="data final (AAAA-MM-DD)")
     argumentos = parser.parse_args()
 
-    fim = date.today()
-    inicio = fim - timedelta(days=365 * argumentos.anos)
+    # `--inicio`/`--fim` vencem `--anos`: quem digitou uma data exata quer aquela data.
+    fim = argumentos.fim or date.today()
+    inicio = argumentos.inicio or (fim - timedelta(days=365 * argumentos.anos))
+    if inicio >= fim:
+        parser.error(f"--inicio ({inicio}) precisa ser anterior a --fim ({fim})")
     DESTINO.mkdir(parents=True, exist_ok=True)
 
-    print(f"Baixando {argumentos.anos} ano(s) de dados ({inicio} a {fim})\n")
+    print(f"Baixando de {inicio} a {fim} ({(fim - inicio).days} dias)\n")
 
     cotacoes_por_pais: dict[str, list[tuple]] = {"Brasil": [], "EUA": []}
     todas_cotacoes: list[tuple] = []
@@ -262,10 +279,10 @@ def main() -> int:
 
     with sqlite3.connect(BANCO) as conexao:
         criar_esquema(conexao)
-        conexao.executemany("INSERT INTO ativos VALUES (?,?,?,?,?,?,?)", ATIVOS)
-        conexao.executemany("INSERT INTO cotacoes VALUES (?,?,?,?,?,?,?)", todas_cotacoes)
+        conexao.executemany("INSERT INTO assets VALUES (?,?,?,?,?,?,?)", ATIVOS)
+        conexao.executemany("INSERT INTO quotes VALUES (?,?,?,?,?,?,?)", todas_cotacoes)
         conexao.executemany("INSERT INTO series VALUES (?,?,?,?)", INDICADORES)
-        conexao.executemany("INSERT INTO indicadores VALUES (?,?,?)", todos_indicadores)
+        conexao.executemany("INSERT INTO indicators VALUES (?,?,?)", todos_indicadores)
 
     exportar_csv(DESTINO / "acoes_b3.csv", cotacoes_por_pais["Brasil"])
     exportar_csv(DESTINO / "acoes_eua.csv", cotacoes_por_pais["EUA"])
