@@ -104,6 +104,22 @@ class SQLConnector:
     def load(self) -> pd.DataFrame:
         """Open the connection, run the query, and return the result.
         """
+        if self.connection.lower() == 'duckdb':
+            import duckdb
+            try:
+                # Map SQLAlchemy named params (:name) to DuckDB named params ($name)
+                query = self.query
+                params = self.parameters or {}
+                for param in params:
+                    query = query.replace(f":{param}", f"${param}")
+                
+                with duckdb.connect() as conn:
+                    return conn.execute(query, params).df()
+            except Exception as e:
+                raise ConnectorError(
+                    "sql_query_failed", connection="duckdb", detail=e
+                ) from e
+
         try:
             engine = create_engine(self.connection)
             self._enforce_foreign_keys(engine)

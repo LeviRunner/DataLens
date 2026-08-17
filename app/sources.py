@@ -19,6 +19,7 @@ knows the joins breaks silently the day the schema moves.
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import streamlit as st
 
@@ -61,9 +62,20 @@ BCB_SERIES = {
     },
 }
 
-QUOTES_QUERY = "SELECT ticker, date, close FROM quotes"
-ASSETS_QUERY = "SELECT ticker, name, sector, country FROM assets"
-INDICATORS_QUERY = "SELECT date, value FROM indicators WHERE code = :code"
+# The Parquet warehouse the scheduler writes. The paths are anchored on this file's
+# location, not on the working directory: `streamlit run` from a different folder used
+# to resolve 'data/raw/...' against the wrong root and open the app against an empty
+# virtual table that failed the moment anyone switched pages.
+RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
+
+QUOTES_QUERY = f"SELECT ticker, date, close FROM '{(RAW_DIR / 'quotes.parquet').as_posix()}'"
+ASSETS_QUERY = (
+    f"SELECT ticker, name, sector, country, currency "
+    f"FROM '{(RAW_DIR / 'assets.parquet').as_posix()}'"
+)
+INDICATORS_QUERY = (
+    f"SELECT date, value FROM '{(RAW_DIR / 'indicators.parquet').as_posix()}' WHERE code = :code"
+)
 
 # The columns the warehouse spells its quotes with, and the ones the BCB spells its
 # series with. Named because three files would otherwise each hold their own string.

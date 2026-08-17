@@ -10,5 +10,12 @@ plotly==6.5.1           # gráficos do perfil
 PyYAML==6.0.3           # leitura do arquivo de config
 openpyxl==3.1.5         # leitura de arquivos Excel (.xlsx)
 
+# Novas dependências para a arquitetura de Engenharia de Dados
+pandera==0.20.4         # Contratos de dados (validação de schemas)
+apscheduler==3.10.4     # Automação de carga em background
+duckdb==1.1.3           # Leitura analítica e baixa latência (SQL in-process)
+polars==1.6.0           # Transformação multithread e exportação rápida
+xlsxwriter==3.2.0       # Motor para exportação de Excel no Polars
+
 # Desenvolvimento
 pytest==9.1.1           # execução dos testes

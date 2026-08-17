@@ -172,6 +172,17 @@ def snowflake_db(tmp_path: Path, snowflake_schema: str) -> str:
     connection.close()
     return f"sqlite:///{path}"
 
+@pytest.fixture
+def sample_parquet(tmp_path: Path) -> Path:
+    import polars as pl
+    path = tmp_path / "quotes.parquet"
+    df = pl.DataFrame({
+        "ticker": ["PETR4.SA", "PETR4.SA", "AAPL"],
+        "date": ["2026-01-02", "2026-01-03", "2026-01-02"],
+        "close": [40.0, 41.5, 210.0]
+    })
+    df.write_parquet(path)
+    return path
 
 @pytest.fixture
 def sample_db(tmp_path: Path) -> str:
@@ -183,6 +194,7 @@ def sample_db(tmp_path: Path) -> str:
     Deliberadamente plana e sem FK: aqui se testa o CONECTOR, nao o warehouse.
     """
     path = tmp_path / "test.db"
+    import sqlite3
     connection = sqlite3.connect(path)
     connection.executescript(
         """

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -31,6 +32,7 @@ for _path in (_ROOT / "src", _HERE):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
+import downloader  # noqa: E402
 import home  # noqa: E402
 import terminal  # noqa: E402
 import theme  # noqa: E402
@@ -44,7 +46,7 @@ from datalens.connectors.csv_connector import CSVConnector  # noqa: E402
 from datalens.connectors.excel_connector import ExcelConnector  # noqa: E402
 from datalens.connectors.sql_connector import SQLConnector  # noqa: E402
 from datalens.i18n import (  # noqa: E402
-    LANGUAGE_NAMES,
+    DEFAULT_LANGUAGE,
     SUPPORTED_LANGUAGES,
     set_language,
     text,
@@ -62,7 +64,7 @@ EXAMPLE_CSV = EXAMPLES / "acoes_b3.csv"
 # cada `AppTest.run()` passou a ler um milhão de cotações e a suíte estourou dois
 # minutos. Apontar o app para um banco pequeno devolve os testes ao contrato.
 EXAMPLE_DB_FILE = Path(os.environ.get("DATALENS_DB") or (EXAMPLES / "finance.db"))
-EXAMPLE_DB = f"sqlite:///{EXAMPLE_DB_FILE.as_posix()}"
+EXAMPLE_DB = "duckdb"
 
 # The database already flattened the snowflake - the app only names the views.
 READY_MADE_VIEWS = ("v_assets_full", "v_positions")
@@ -318,23 +320,17 @@ def main() -> None:
     st.set_page_config(page_title="DataLens", layout="wide", initial_sidebar_state="expanded")
     theme.apply()
 
-    # THE SELECTOR IS DRAWN FIRST AND THE LANGUAGE IS SET BEFORE ANYTHING ELSE. Every
-    # label below is looked up at draw time, so a widget rendered above this line would
-    # keep the previous language for one whole re-run - the brand block did exactly
-    # that until it moved underneath.
-    #
-    # Its own label stays bilingual: somebody who landed on the wrong language has to
-    # be able to find this control without reading the language they cannot read.
-    language = st.sidebar.selectbox(
-        "Language / Idioma",
-        SUPPORTED_LANGUAGES,
-        format_func=lambda code: LANGUAGE_NAMES[code],
-        key="language",
-    )
-    # Per session, not per process: i18n keeps it in a ContextVar for this reason.
+    # Language is read BEFORE any label is drawn: the menu above the switcher has to
+    # come out in the session's language, and a clicked button is already in
+    # session_state at the top of this very run.
+    language = st.session_state.get("language", DEFAULT_LANGUAGE)
+    for code in SUPPORTED_LANGUAGES:
+        if st.session_state.get(f"lang_{code}"):
+            language = code
+    st.session_state["language"] = language
     set_language(language)
 
-    theme.brand(BRAND, BRAND_MARK, text("ui_brand_note"))
+    theme.brand(BRAND, BRAND_MARK)
 
     # ONE page at a time, and not tabs. Tabs render every panel on every re-run - the
     # ranking would recompute while somebody is reading the profile - and they put a
@@ -351,49 +347,51 @@ def main() -> None:
         key="page",
     )
 
-    # O CACHE GUARDA POR UMA HORA, E O BANCO MUDA NO DISCO. `download_data.py` leva
-    # mais de uma hora no universo completo e grava ativo a ativo: quem deixou a aba
-    # aberta continua vendo o retrato do momento em que abriu, com um número de ativos
-    # que já não é o do arquivo. Não há como o app perceber sozinho - o SQLite não
-    # avisa ninguém - então o recarregar é explícito, e fica onde quem acabou de rodar
-    # o script vai procurar.
-    if st.sidebar.button(text("ui_reload_data"), help=text("ui_reload_data_help")):
+    theme.language_buttons(language)
+
+    # O CACHE GUARDA POR UMA HORA...
+    if st.sidebar.button(
+        text("ui_reload_data"), help=text("ui_reload_data_help"), use_container_width=True
+    ):
         st.cache_data.clear()
         st.rerun()
 
-    if page == HOME:
-        home.render(EXAMPLE_DB)
-        return
+    downloader.sidebar_button()
 
-    source = st.sidebar.selectbox(
-        text("ui_source"),
-        SOURCES,
-        format_func=lambda name: label(f"ui_source_{name}"),
-        key="source",
-    )
-    should_clean = st.sidebar.checkbox(text("ui_clean_first"), value=False, key="clean")
+    start_time = time.time()
 
-    df = None
-    error_message = None
-    try:
-        connector = _connector_for(source)
-        df = None if connector is None else connector.load()
-    except (ConnectorError, ConfigError) as error:
-        # One type caught, one sentence printed, in the language of this session.
-        error_message = translate(error.message)
+    with st.spinner("Carregando / Loading..."):
+        if page == HOME:
+            home.render(EXAMPLE_DB)
+        else:
+            source = st.sidebar.selectbox(
+                text("ui_source"),
+                SOURCES,
+                format_func=lambda name: label(f"ui_source_{name}"),
+                key="source",
+            )
+            should_clean = st.sidebar.checkbox(text("ui_clean_first"), value=False, key="clean")
 
-    theme.page_title(page)
+            df = None
+            error_message = None
+            try:
+                connector = _connector_for(source)
+                df = None if connector is None else connector.load()
+            except (ConnectorError, ConfigError) as error:
+                error_message = translate(error.message)
 
-    if page == TERMINAL:
-        # The terminal has a warehouse of its own, so a failed upload in Explore must
-        # not take the ranking down with it.
-        terminal.render(EXAMPLE_DB, loaded_frame=df)
-    elif error_message:
-        st.error(error_message)
-    elif df is None:
-        st.info(text("ui_pick_a_source"))
-    else:
-        _explore(df, should_clean)
+            theme.page_title(page)
+
+            if page == TERMINAL:
+                terminal.render(EXAMPLE_DB, loaded_frame=df)
+            elif error_message:
+                st.error(error_message)
+            elif df is None:
+                st.info(text("ui_pick_a_source"))
+            else:
+                _explore(df, should_clean)
+
+    theme.response_time(time.time() - start_time)
 
 
 main()

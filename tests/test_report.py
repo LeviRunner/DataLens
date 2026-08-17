@@ -232,10 +232,10 @@ def test_charts_are_embedded_inline_when_given(sample_profiles):
 
 
 def test_a_wide_profile_from_a_view_renders_every_column(snowflake_db: str):
-    """NOVO. `v_assets_full` tem 12 colunas, varias 100% nulas.
+    """Integracao ponta a ponta: conector -> profiler -> report.
 
-    Um relatorio que "pula" a coluna vazia esconde exatamente o achado mais forte da
-    analise. Nada a dizer sobre uma coluna E o que ha para dizer sobre ela.
+    O profiler nunca deve apagar coluna que chegou do banco, e o report tem que dar
+    um jeito de desenhar todas num container que so suporta 5 na largura.
     """
     from datalens.connectors.sql_connector import SQLConnector
 

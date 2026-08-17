@@ -75,9 +75,9 @@ def test_validate_path_rejects_unusable_paths(tmp_path: Path, case, expected_mes
 # --- SQLConnector: the happy path ---------------------------------------------
 
 
-def test_load_returns_the_query_result_as_a_dataframe(sample_db):
+def test_load_returns_the_query_result_as_a_dataframe(sample_parquet):
     # Arrange
-    connector = SQLConnector(sample_db, "SELECT ticker, date, close FROM quotes")
+    connector = SQLConnector("duckdb", f"SELECT ticker, date, close FROM '{sample_parquet.as_posix()}'")
 
     # Act
     result = connector.load()
@@ -88,11 +88,11 @@ def test_load_returns_the_query_result_as_a_dataframe(sample_db):
     assert list(result.columns) == ["ticker", "date", "close"]
 
 
-def test_load_binds_named_parameters_instead_of_interpolating_them(sample_db):
+def test_load_binds_named_parameters_instead_of_interpolating_them(sample_parquet):
     # Arrange
     connector = SQLConnector(
-        sample_db,
-        "SELECT close FROM quotes WHERE ticker = :ticker ORDER BY date",
+        "duckdb",
+        f"SELECT close FROM '{sample_parquet.as_posix()}' WHERE ticker = :ticker ORDER BY date",
         {"ticker": "PETR4.SA"},
     )
 
@@ -106,12 +106,12 @@ def test_load_binds_named_parameters_instead_of_interpolating_them(sample_db):
 # --- SQLConnector: the security property --------------------------------------
 
 
-def test_a_malicious_parameter_is_treated_as_data_and_not_executed(sample_db):
+def test_a_malicious_parameter_is_treated_as_data_and_not_executed(sample_parquet):
     """The reason bind parameters exist: the value never becomes SQL."""
     # Arrange
     attack = "'; DROP TABLE quotes; --"
     connector = SQLConnector(
-        sample_db, "SELECT COUNT(*) AS n FROM quotes WHERE ticker = :ticker", {"ticker": attack}
+        "duckdb", f"SELECT COUNT(*) AS n FROM '{sample_parquet.as_posix()}' WHERE ticker = :ticker", {"ticker": attack}
     )
 
     # Act
@@ -119,7 +119,7 @@ def test_a_malicious_parameter_is_treated_as_data_and_not_executed(sample_db):
 
     # Assert - it matched nothing, and the table is still standing
     assert result["n"][0] == 0
-    survivors = SQLConnector(sample_db, "SELECT COUNT(*) AS n FROM quotes").load()
+    survivors = SQLConnector("duckdb", f"SELECT COUNT(*) AS n FROM '{sample_parquet.as_posix()}'").load()
     assert survivors["n"][0] == 3
 
 
@@ -158,23 +158,23 @@ def test_an_invalid_dialect_is_reported_as_a_connection_string_problem():
         "SELECT fechamento FROM quotes",  # column does not exist
     ],
 )
-def test_a_broken_query_is_reported_as_a_connector_error(sample_db, query):
+def test_a_broken_query_is_reported_as_a_connector_error(sample_parquet, query):
     """pandas wraps the SQLAlchemy error in pandas.errors.DatabaseError, which does
     NOT inherit from SQLAlchemyError. Catching only SQLAlchemyError would let these
     escape as a raw stack trace - this test is what keeps that regression out.
     """
     # Arrange
-    connector = SQLConnector(sample_db, query)
+    connector = SQLConnector("duckdb", query.replace("quotes", f"'{sample_parquet.as_posix()}'"))
 
     # Act / Assert
     with pytest.raises(ConnectorError, match="Failed to execute query"):
         connector.load()
 
 
-def test_the_original_exception_is_preserved_as_the_cause(sample_db):
+def test_the_original_exception_is_preserved_as_the_cause(sample_parquet):
     """`raise ... from error` keeps the real cause in the traceback."""
     # Arrange
-    connector = SQLConnector(sample_db, "SELECT * FROM nonexistent_table")
+    connector = SQLConnector("duckdb", "SELECT * FROM nonexistent_table")
 
     # Act / Assert
     with pytest.raises(ConnectorError) as caught:

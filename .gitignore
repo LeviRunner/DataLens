@@ -9,6 +9,7 @@
 .private_docs
 .venv
 .claude
+START.md
 
 # Rascunhos de estudo: copia comentada do modulo, gerada ao lado do arquivo real para
 # eu ler e digitar a mao. Nao e teste e nao entra no repositorio.
@@ -24,8 +25,16 @@ __pycache__/
 # Fica de fora porque cada regeracao gravaria um blob novo INTEIRO no historico do
 # Git — o banco vai a 134 MB no universo completo, e um repositorio de estudo nao
 # deveria carregar isso para sempre por causa de um arquivo que um comando refaz.
-data/exemplos/*.db
 data/exemplos/acoes_*.csv
+data/exemplos/raw/_*.parquet
+data/exemplos/*.db
+# O warehouse em Parquet que o app le: `python scripts/scheduler.py` (ou
+# `write_parquet.py`) reconstrói estes tres arquivos a partir do SQLite.
+data/raw/
+*.parquet
+
+# Metadados gerados por ferramenta de copilot ao lado dos scripts. Nao sao codigo.
+*.metadata.json
 
 # Binario de 4 MB que veio junto para inspecionar o banco na mao; quem precisa
 # instala o sqlite3 do sistema.

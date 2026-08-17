@@ -550,6 +550,14 @@ UI: dict[str, dict[str, str]] = {
             "Drops the cache and reads the database again. Press it after running "
             "scripts/download_data.py - the page keeps what it read when it opened."
         ),
+        "ui_download_data": "Download data",
+        "ui_download_data_help": (
+            "Runs scripts/download_data.py and regenerates finance.db and the example "
+            "CSVs (default universe: the 12 curated assets)."
+        ),
+        "ui_downloading": "Downloading data - this can take a minute...",
+        "ui_download_ok": "Data downloaded. Reloading the screen...",
+        "ui_download_fail": "Download failed:\n{detail}",
         "ui_page": "Page:",
         "ui_page_Home": "Home",
         "ui_page_Explore": "Explore",
@@ -624,7 +632,7 @@ UI: dict[str, dict[str, str]] = {
         "ui_region": "Region",
         "ui_sector": "Sector",
         "ui_all_regions": "All regions",
-        "ui_all_sectors": "All sectors",
+        "ui_all_sectors": "Select",
         "ui_card_selic": "Selic, period",
         "ui_card_vs_selic": "{ticker} vs Selic",
         "ui_card_calmest": "Calmest: {ticker}",
@@ -633,6 +641,40 @@ UI: dict[str, dict[str, str]] = {
         "ui_panel_benchmark": "Benchmark over time (Selic, % per day)",
         "ui_panel_premium": "Premium over the benchmark, by asset",
         "ui_panel_universe": "Universe by sector",
+        # home.py - asset simulation section
+        "ui_sim_heading": (
+            "Simulation of Best-Performing Assets for the Period ({data_inicio} to {data_fim})"
+        ),
+        "ui_card1_title": "Benchmark Portfolio",
+        "ui_card1_subtitle": "Asset Comparison by Sector",
+        "ui_card1_cost_total": "Total Cost",
+        "ui_card1_share_count": "Number of Shares",
+        "ui_card1_portfolio_pct": "% of Portfolio",
+        "ui_card1_legend": "Sectors",
+        "ui_card1_no_data": "No data available to build the chart with the current filters.",
+        "ui_card2_title": "Position Calculation",
+        "ui_card2_subtitle": "Volume and Allocation",
+        "ui_card2_volume": "Volume per Asset (Shares)",
+        "ui_card2_assets": "Assets in Portfolio",
+        "ui_card2_assets_value": "{count} assets",
+        "ui_card2_shares_each": "{count} shares each",
+        "ui_card2_total_shares": "Total Shares",
+        "ui_card2_allocated_br": "Allocated (Brazil)",
+        "ui_card2_allocated_us": "Allocated (USA)",
+        "ui_card2_total_position": "Total Portfolio Position",
+        "ui_card3_title": "Costs and Returns",
+        "ui_card3_subtitle": "Global Metrics",
+        "ui_card3_category": "Global Category",
+        "ui_card3_equities": "Equities",
+        "ui_card3_dividends": "Annual Dividend Projection",
+        "ui_card3_yield_delta": "6.5% p.a.",
+        "ui_card3_brokerage": "Brokerage Cost",
+        "ui_card3_ops": "- {count} ops at R$ 4.90",
+        "ui_card3_estimate_info": (
+            "Estimate: assumed average yield of 6.5% p.a. on the position. "
+            "The current base holds no real payout history (ex-dates and amounts), "
+            "so this value does not represent dividends actually received in the period."
+        ),
         # terminal.py
         "ui_search_ingest": "Search and ingest",
         "ui_filter_assets": "Filter assets",
@@ -728,6 +770,14 @@ UI: dict[str, dict[str, str]] = {
             "Descarta o cache e lê o banco de novo. Use depois de rodar "
             "scripts/download_data.py — a página mantém o que leu ao abrir."
         ),
+        "ui_download_data": "Baixar dados",
+        "ui_download_data_help": (
+            "Roda scripts/download_data.py e regenera o finance.db e os CSVs de exemplo "
+            "(universo padrão: os 12 ativos curados)."
+        ),
+        "ui_downloading": "Baixando dados — isso pode levar um minuto...",
+        "ui_download_ok": "Dados baixados. Recarregando a tela...",
+        "ui_download_fail": "Falha ao baixar:\n{detail}",
         "ui_page": "Página:",
         "ui_page_Home": "Início",
         "ui_page_Explore": "Explorar",
@@ -801,7 +851,7 @@ UI: dict[str, dict[str, str]] = {
         "ui_region": "Região",
         "ui_sector": "Setor",
         "ui_all_regions": "Todas as regiões",
-        "ui_all_sectors": "Todos os setores",
+        "ui_all_sectors": "Selecionar",
         "ui_card_selic": "Selic, período",
         "ui_card_vs_selic": "{ticker} vs Selic",
         "ui_card_calmest": "Mais calmo: {ticker}",
@@ -810,6 +860,39 @@ UI: dict[str, dict[str, str]] = {
         "ui_panel_benchmark": "Referência ao longo do tempo (Selic, % ao dia)",
         "ui_panel_premium": "Prêmio sobre a referência, por ativo",
         "ui_panel_universe": "Universo por setor",
+        "ui_sim_heading": (
+            "Simulação de Ativos com Melhor Desempenho no Período ({data_inicio} a {data_fim})"
+        ),
+        "ui_card1_title": "Carteira Benchmark",
+        "ui_card1_subtitle": "Comparação de Ativos por Setor",
+        "ui_card1_cost_total": "Custo Total",
+        "ui_card1_share_count": "Quantidade de Cotas",
+        "ui_card1_portfolio_pct": "% da Carteira",
+        "ui_card1_legend": "Setores",
+        "ui_card1_no_data": "Nenhum dado disponível para compor o gráfico com os filtros atuais.",
+        "ui_card2_title": "Cálculo de Posição",
+        "ui_card2_subtitle": "Volume e Alocação",
+        "ui_card2_volume": "Volume por Ativo (Cotas)",
+        "ui_card2_assets": "Ativos na Carteira",
+        "ui_card2_assets_value": "{count} ativos",
+        "ui_card2_shares_each": "{count} cotas cada",
+        "ui_card2_total_shares": "Total de Ações",
+        "ui_card2_allocated_br": "Alocado (Brasil)",
+        "ui_card2_allocated_us": "Alocado (EUA)",
+        "ui_card2_total_position": "Posição Total da Carteira",
+        "ui_card3_title": "Custos e Rendimentos",
+        "ui_card3_subtitle": "Métricas Globais",
+        "ui_card3_category": "Categoria Global",
+        "ui_card3_equities": "Renda Variável",
+        "ui_card3_dividends": "Projeção Anual de Dividendos",
+        "ui_card3_yield_delta": "6,5% a.a.",
+        "ui_card3_brokerage": "Custo de Corretagem",
+        "ui_card3_ops": "- {count} ops a R$ 4,90",
+        "ui_card3_estimate_info": (
+            "Estimativa: yield médio assumido de 6,5% a.a. sobre a posição. "
+            "A base atual não contém histórico real de proventos (datas com/ex e valores), "
+            "portanto este valor não representa dividendos efetivamente recebidos no período."
+        ),
         "ui_search_ingest": "Buscar e carregar",
         "ui_filter_assets": "Filtrar ativos",
         "ui_filter_assets_help": (
@@ -905,6 +988,14 @@ UI: dict[str, dict[str, str]] = {
             "Descarta la caché y vuelve a leer la base. Úsalo tras ejecutar "
             "scripts/download_data.py: la página conserva lo que leyó al abrir."
         ),
+        "ui_download_data": "Descargar datos",
+        "ui_download_data_help": (
+            "Ejecuta scripts/download_data.py y regenera finance.db y los CSV de ejemplo "
+            "(universo por defecto: los 12 activos curados)."
+        ),
+        "ui_downloading": "Descargando datos — esto puede tardar un minuto...",
+        "ui_download_ok": "Datos descargados. Recargando la pantalla...",
+        "ui_download_fail": "Error al descargar:\n{detail}",
         "ui_page": "Página:",
         "ui_page_Home": "Inicio",
         "ui_page_Explore": "Explorar",
@@ -978,7 +1069,7 @@ UI: dict[str, dict[str, str]] = {
         "ui_region": "Región",
         "ui_sector": "Sector",
         "ui_all_regions": "Todas las regiones",
-        "ui_all_sectors": "Todos los sectores",
+        "ui_all_sectors": "Seleccionar",
         "ui_card_selic": "Selic, período",
         "ui_card_vs_selic": "{ticker} vs Selic",
         "ui_card_calmest": "Más tranquilo: {ticker}",
@@ -987,6 +1078,41 @@ UI: dict[str, dict[str, str]] = {
         "ui_panel_benchmark": "Referencia a lo largo del tiempo (Selic, % por día)",
         "ui_panel_premium": "Prima sobre la referencia, por activo",
         "ui_panel_universe": "Universo por sector",
+        "ui_sim_heading": (
+            "Simulación de Activos con Mejor Desempeño en el Período ({data_inicio} a {data_fim})"
+        ),
+        "ui_card1_title": "Cartera de Referencia",
+        "ui_card1_subtitle": "Comparación de Activos por Sector",
+        "ui_card1_cost_total": "Costo Total",
+        "ui_card1_share_count": "Cantidad de Cuotas",
+        "ui_card1_portfolio_pct": "% de la Cartera",
+        "ui_card1_legend": "Sectores",
+        "ui_card1_no_data": (
+            "No hay datos disponibles para componer el gráfico con los filtros actuales."
+        ),
+        "ui_card2_title": "Cálculo de Posición",
+        "ui_card2_subtitle": "Volumen y Asignación",
+        "ui_card2_volume": "Volumen por Activo (Cuotas)",
+        "ui_card2_assets": "Activos en la Cartera",
+        "ui_card2_assets_value": "{count} activos",
+        "ui_card2_shares_each": "{count} cuotas cada una",
+        "ui_card2_total_shares": "Total de Acciones",
+        "ui_card2_allocated_br": "Asignado (Brasil)",
+        "ui_card2_allocated_us": "Asignado (EE. UU.)",
+        "ui_card2_total_position": "Posición Total de la Cartera",
+        "ui_card3_title": "Costos y Rendimientos",
+        "ui_card3_subtitle": "Métricas Globales",
+        "ui_card3_category": "Categoría Global",
+        "ui_card3_equities": "Renta Variable",
+        "ui_card3_dividends": "Proyección Anual de Dividendos",
+        "ui_card3_yield_delta": "6,5% anual",
+        "ui_card3_brokerage": "Costo de Corretaje",
+        "ui_card3_ops": "- {count} ops a R$ 4,90",
+        "ui_card3_estimate_info": (
+            "Estimación: rendimiento promedio asumido del 6,5% anual sobre la posición. "
+            "La base actual no contiene historial real de dividendos (fechas ex y valores), "
+            "por lo que este valor no representa dividendos efectivamente recibidos en el período."
+        ),
         "ui_search_ingest": "Buscar e ingerir",
         "ui_filter_assets": "Filtrar activos",
         "ui_filter_assets_help": (

@@ -20,6 +20,37 @@ import pandas as pd
 
 from .detector import DetectedType, best_date_format, parse_date, parse_number
 from .i18n import Message, translate
+import pandera as pa
+from pandera.typing import Series
+
+# Define rigid validation schemas as per Phase 1
+# This schema ensures that any column named 'date' or 'data' is a datetime
+# and any column named 'close', 'value', or 'valor' cannot be null.
+class BaseDataContract(pa.DataFrameModel):
+    class Config:
+        coerce = True
+        strict = False  # Allow other columns
+
+def enforce_data_contracts(df: pd.DataFrame) -> pd.DataFrame:
+    """Enforces strict data contracts using Pandera before cleaning.
+    
+    If 'date' or 'data' exists, it must be convertible to datetime.
+    If 'close', 'value', or 'valor' exists, it cannot be null.
+    """
+    schema_dict = {}
+    
+    for col in df.columns:
+        col_str = str(col).lower()
+        if col_str in ("date", "data"):
+            schema_dict[col] = pa.Column(pa.DateTime, coerce=True)
+        elif col_str in ("close", "value", "valor"):
+            schema_dict[col] = pa.Column(pa.Float, nullable=False, coerce=True)
+            
+    if schema_dict:
+        schema = pa.DataFrameSchema(schema_dict, strict=False)
+        return schema.validate(df)
+    return df
+
 
 # Below this, the detector is guessing rather than reading. Converting on a guess
 # destroys data, and the user has not had a chance to correct it yet.
@@ -56,6 +87,12 @@ def clean(
     """
     options = options or {}
     _validate_options(options)
+
+    # Phase 1: Validate data contracts before any cleaning
+    try:
+        df = enforce_data_contracts(df)
+    except pa.errors.SchemaError as e:
+        raise ValueError(f"Data validation failed: {e}")
 
     log: list[CleaningAction] = []
     result = df.copy(deep=True)

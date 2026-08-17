@@ -192,16 +192,15 @@ def test_the_language_selector_exists():
     global. Isso so tem valor se houver onde escolher.
 
     Um modulo cuidadoso servindo uma tela que nao expoe o recurso e trabalho perdido -
-    e acontece com mais frequencia do que se admite.
+    e acontece com mais frequencia do que se admite. O seletor virou botoes de idioma
+    na barra lateral; o que se testa e que eles existem.
     """
     # Act
     app = AppTest.from_file(APP, default_timeout=TIMEOUT).run()
 
     # Assert
-    labels = [box.label for box in app.selectbox] + [box.label for box in app.radio]
-    assert any(
-        word in " ".join(labels).lower() for word in ("idioma", "language", "lengua")
-    )
+    labels = " ".join(button.label for button in app.button)
+    assert any(name in labels for name in ("English", "Português", "Español"))
 
 
 def test_choosing_a_language_translates_the_screen():
@@ -217,8 +216,7 @@ def test_choosing_a_language_translates_the_screen():
     antes = [item.value for item in app.sidebar.markdown]
 
     # Act
-    app.selectbox(key="language").set_value("pt_BR")
-    app = app.run()
+    app.button(key="lang_pt_BR").click().run()
 
     # Assert
     assert not app.exception
@@ -241,8 +239,7 @@ def test_switching_language_does_not_move_the_page_you_are_on():
     app = app.run()
 
     # Act
-    app.selectbox(key="language").set_value("es")
-    app = app.run()
+    app.button(key="lang_es").click().run()
 
     # Assert
     assert not app.exception
@@ -389,12 +386,16 @@ def test_the_home_page_shows_the_loser_next_to_the_winner():
 
 def test_the_home_page_draws_its_three_panels():
     """Linha, barra e pizza - uma pergunta cada. Menos que tres e a faixa de graficos
-    virou decoracao; mais nao cabe acima da dobra."""
+    virou decoracao; mais nao cabe acima da dobra.
+
+    A barra extra da seção de simulação (Carteira Benchmark) soma um quarto gráfico -
+    os três painéis da dobra principal continuam lá, agora seguidos do benchmark.
+    """
     # Act
     app = AppTest.from_file(APP, default_timeout=120).run()
 
     # Assert
-    assert len(app.get("plotly_chart")) == 3
+    assert len(app.get("plotly_chart")) == 4
 
 
 def test_the_terminal_produces_a_ranking_when_the_form_is_submitted():

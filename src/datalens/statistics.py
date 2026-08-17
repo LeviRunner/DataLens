@@ -97,7 +97,14 @@ def correlation_matrix(
     if exclude_identifiers:
         numeric = numeric[_measurement_columns(df, numeric.columns)]
 
-    return numeric.corr(method=method)
+    # Phase 4: Use Polars for heavy math
+    import polars as pl
+    pl_df = pl.DataFrame(numeric)
+    # Polars corr doesn't keep the index, so we restore it
+    corr_pd = pl_df.corr().to_pandas()
+    corr_pd.index = numeric.columns
+    
+    return corr_pd
 
 
 def detect_trend(df: pd.DataFrame, date_column: str, value_column: str) -> Trend:
